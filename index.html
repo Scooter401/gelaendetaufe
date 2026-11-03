@@ -919,6 +919,20 @@ details>*:not(summary){margin-top:8px}
   background:rgba(255,255,255,.93);color:#111;font:700 12px/1 Arial,sans-serif;padding:3px 5px;border-radius:5px;box-shadow:0 1px 3px rgba(0,0,0,.45);pointer-events:none}
 label.chk{display:flex;align-items:center;gap:10px;margin-top:12px;font-size:15px}
 label.chk input{width:24px;height:24px;accent-color:#2f5d8a;flex:none}
+/* v1.6d: Standort + Karte oben rechts, Teilen oben links */
+#side,#tl{position:absolute;z-index:1000;display:flex;flex-direction:column;gap:8px}
+#side{right:calc(var(--sar) + 8px);top:calc(var(--sat) + 62px)}
+#tl{left:calc(var(--sal) + 8px);top:calc(var(--sat) + 10px)}
+button.fl{width:56px;height:52px;border:0;border-radius:12px;background:#fff;color:var(--acc);box-shadow:0 2px 8px rgba(0,0,0,.35);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:0}
+button.fl .ic{height:24px;display:flex;align-items:center;justify-content:center}
+button.fl .ic svg{width:22px;height:22px}
+button.fl .lb{font-size:10px;font-weight:700}
+button.fl:active{filter:brightness(.92)}
+#bLoc.fl.active{background:#2563eb;color:#fff}
+#tb button{max-width:88px}
+.mnote{top:calc(100% - 3px)}
+.mnote.s{top:calc(100% - 8px)}
 </style>
 </head><body>
 <div id="map"></div>
@@ -931,13 +945,16 @@ label.chk input{width:24px;height:24px;accent-color:#2f5d8a;flex:none}
   <button id="bMenu"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></span><span class="lb">Menü</span></button>
   <button id="bMarker"><span class="ic"><span class="mk mkL">J</span><span class="mk mkA">1</span></span><span class="lb">Marker</span></button>
   <button id="bDraw"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21l3.5-1 11-11-2.5-2.5-11 11z"/><path d="M14 5.5l2.5-2.5 2.5 2.5-2.5 2.5"/></svg></span><span class="lb">Zeichnen</span></button>
-  <button id="bUndo"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 010 12h-3"/></svg></span><span class="lb">Zurück</span></button>
-  <i class="tbsep"></i>
-  <button id="bLoc"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4"/></svg></span><span class="lb">Standort</span></button>
-  <button id="bLayer"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg></span><span class="lb">Ortho</span></button>
-  <button id="bLock"><span class="ic"><b class="lk">🔓</b></span><span class="lb">Offen</span></button>
   <button id="bList"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.8" fill="#ef4444" stroke="none"/><circle cx="4.5" cy="12" r="1.8" fill="#facc15" stroke="none"/><circle cx="4.5" cy="18" r="1.8" fill="#facc15" stroke="none"/></svg></span><span class="lb">Liste</span></button>
-  <button id="bShare"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 12v8h14v-8"/></svg></span><span class="lb">Teilen</span></button>
+  <button id="bLock"><span class="ic"><b class="lk">🔓</b></span><span class="lb">Offen</span></button>
+  <button id="bUndo"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 010 12h-3"/></svg></span><span class="lb">Zurück</span></button>
+</div>
+<div id="side">
+  <button id="bLoc" class="fl"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4"/></svg></span><span class="lb">Standort</span></button>
+  <button id="bLayer" class="fl"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg></span><span class="lb">Ortho</span></button>
+</div>
+<div id="tl">
+  <button id="bShare" class="fl"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 12v8h14v-8"/></svg></span><span class="lb">Teilen</span></button>
 </div>
 <div id="backdrop"></div>
 <div class="sheet" id="shMenu"><div class="sh-head"><h2>Menü <small id="menuVer" style="font-weight:500;font-size:13px;color:#5b6573;margin-left:6px"></small></h2><button class="x" aria-label="Schließen">✕</button></div>
@@ -1222,7 +1239,7 @@ function showMarkPopup(id){
 }
 function drawMarks(){ markL.clearLayers(); for(const k in markerObjs) delete markerObjs[k]; P.marks.forEach(drawMark); }
 function drawMark(m){
-  const lbl=(m.show&&m.note&&m.note.trim())? `<div class="mnote">${esc(m.note.trim())}</div>` : '';
+  const lbl=(m.show&&m.note&&m.note.trim())? `<div class="mnote${m.t==="S"?" s":""}">${esc(m.note.trim())}</div>` : '';
   const icon=m.t==='S'? L.divIcon({className:'mwrap',html:markHTML(m.t,m.v)+lbl,iconSize:[38,38],iconAnchor:[19,19]}) : L.divIcon({className:'mwrap',html:markHTML(m.t,m.v)+lbl,iconSize:[64,38],iconAnchor:[32,19]});
   const mk=L.marker([m.lat,m.lng],{icon,draggable:!isLocked(),autoPan:true,keyboard:false,zIndexOffset:m.t==='L'?0:m.t==='S'?50:100}).addTo(markL);
   mk.on('dragstart',()=>pushUndo());
@@ -1967,8 +1984,8 @@ async function renderImage(){
   /* Marker (L zuunterst) */
   [...P.marks].sort((a,c)=>(a.t==='L'?0:1)-(c.t==='L'?0:1)).forEach(m=>{ const p=pt(m.lat,m.lng); drawMarkCanvas(ctx,m.t,m.v,p.x,p.y); });
   P.marks.filter(m=>m.show&&m.note&&m.note.trim()).forEach(m=>{ const p=pt(m.lat,m.lng); const t=m.note.trim();
-    ctx.save(); ctx.font='bold 12px Arial'; const w=ctx.measureText(t).width+10; rr(ctx,p.x-w/2,p.y+19,w,18,5); ctx.fillStyle='rgba(255,255,255,.92)'; ctx.fill(); ctx.strokeStyle='rgba(0,0,0,.35)'; ctx.lineWidth=1; ctx.stroke();
-    ctx.fillStyle='#111'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(t,p.x,p.y+28.5); ctx.restore(); });
+    ctx.save(); ctx.font='bold 12px Arial'; const w=ctx.measureText(t).width+10; const dy=m.t==='S'?11:17; rr(ctx,p.x-w/2,p.y+dy,w,18,5); ctx.fillStyle='rgba(255,255,255,.92)'; ctx.fill(); ctx.strokeStyle='rgba(0,0,0,.35)'; ctx.lineWidth=1; ctx.stroke();
+    ctx.fillStyle='#111'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(t,p.x,p.y+dy+9.5); ctx.restore(); });
   ctx.restore();
   /* Nordpfeil + Maßstab */
   ctx.save(); ctx.translate(W-28,HEAD+30);
