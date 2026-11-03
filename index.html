@@ -933,6 +933,19 @@ button.fl:active{filter:brightness(.92)}
 #tb button{max-width:88px}
 .mnote{top:calc(100% - 3px)}
 .mnote.s{top:calc(100% - 8px)}
+/* v1.6e */
+#tb #bLoc.active{background:#2563eb;color:#fff}
+@media (orientation:landscape) and (max-height:540px){
+  :root{--tb:46px}
+  #tb{background:none;box-shadow:none;pointer-events:none;gap:4px;padding:0 calc(var(--sar) + 6px) calc(var(--sab) + 4px) calc(var(--sal) + 6px)}
+  #tb button{pointer-events:auto;height:42px;max-width:76px;background:rgba(30,58,95,.82);box-shadow:0 1px 5px rgba(0,0,0,.35);border-radius:10px;gap:0}
+  #tb button .ic{height:22px} #tb button .ic svg{width:20px;height:20px}
+  #tb button .lb{font-size:9px}
+  #tb button.on{background:rgba(47,93,138,.95)}
+  #tb button:disabled{opacity:1;color:rgba(255,255,255,.4)}
+  #tb #bLock.locked{background:#c81e1e}
+  .leaflet-bottom{bottom:calc(var(--tb) + var(--sab))}
+}
 </style>
 </head><body>
 <div id="map"></div>
@@ -943,15 +956,13 @@ button.fl:active{filter:brightness(.92)}
 
 <div id="tb">
   <button id="bMenu"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></span><span class="lb">Menü</span></button>
+  <button id="bUndo"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 010 12h-3"/></svg></span><span class="lb">Zurück</span></button>
   <button id="bMarker"><span class="ic"><span class="mk mkL">J</span><span class="mk mkA">1</span></span><span class="lb">Marker</span></button>
   <button id="bDraw"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21l3.5-1 11-11-2.5-2.5-11 11z"/><path d="M14 5.5l2.5-2.5 2.5 2.5-2.5 2.5"/></svg></span><span class="lb">Zeichnen</span></button>
   <button id="bList"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.8" fill="#ef4444" stroke="none"/><circle cx="4.5" cy="12" r="1.8" fill="#facc15" stroke="none"/><circle cx="4.5" cy="18" r="1.8" fill="#facc15" stroke="none"/></svg></span><span class="lb">Liste</span></button>
   <button id="bLock"><span class="ic"><b class="lk">🔓</b></span><span class="lb">Offen</span></button>
-  <button id="bUndo"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 010 12h-3"/></svg></span><span class="lb">Zurück</span></button>
-</div>
-<div id="side">
-  <button id="bLoc" class="fl"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4"/></svg></span><span class="lb">Standort</span></button>
-  <button id="bLayer" class="fl"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg></span><span class="lb">Ortho</span></button>
+  <button id="bLoc"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4"/></svg></span><span class="lb">Standort</span></button>
+  <button id="bLayer"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg></span><span class="lb">Ortho</span></button>
 </div>
 <div id="tl">
   <button id="bShare" class="fl"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 12v8h14v-8"/></svg></span><span class="lb">Teilen</span></button>
