@@ -748,7 +748,7 @@ input:focus{outline:none;border-color:#2563eb;background:#fff}
 /* Raster-Beschriftung */
 .gridlbl{display:flex;align-items:center;justify-content:center;font:700 12px/1 Arial,sans-serif;color:#111;
   text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 2px #fff}
-.posdot{width:18px;height:18px;border-radius:50%;background:#2563eb;border:3px solid #fff;box-shadow:0 0 0 2px rgba(37,99,235,.4),0 1px 4px rgba(0,0,0,.5)}
+.posdot{margin:4px;width:18px;height:18px;border-radius:50%;background:#2563eb;border:3px solid #fff;box-shadow:0 0 0 2px rgba(37,99,235,.4),0 1px 4px rgba(0,0,0,.5)}
 .searchpin{width:22px;height:22px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:#2563eb;border:3px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.55)}
 
 /* ---------- Hinweise ---------- */
@@ -946,6 +946,15 @@ button.fl:active{filter:brightness(.92)}
   #tb #bLock.locked{background:#c81e1e}
   .leaflet-bottom{bottom:calc(var(--tb) + var(--sab))}
 }
+/* Koordinaten im Popup */
+.cbox{display:flex;flex-direction:column;gap:5px;margin-top:2px}
+.cval{width:236px;min-height:48px;white-space:pre-line!important;border:1.5px solid var(--line);background:#f5f7fa;border-radius:8px;padding:6px 8px;font:700 14px/1.25 ui-monospace,Menlo,Consolas,monospace;color:#111;text-align:left;white-space:nowrap;-webkit-user-select:text;user-select:text}
+.cval:active{background:#e3ecf7}
+.cfmt{display:flex;gap:3px}
+.cfmt button{flex:1;min-width:0;height:26px;border:1px solid var(--line);background:#fff;border-radius:6px;font-size:10.5px;font-weight:700;color:var(--mut);padding:0}
+.cfmt button.on{background:var(--acc);border-color:var(--acc);color:#fff}
+.cfmt{width:236px}
+.li .t .lmgrs{display:block;font:600 12px/1.3 ui-monospace,Menlo,Consolas,monospace;color:#334155}
 </style>
 </head><body>
 <div id="map"></div>
@@ -976,7 +985,7 @@ button.fl:active{filter:brightness(.92)}
 <div class="sheet" id="shList"><div class="sh-head"><h2 id="listTitle">Marker</h2><button class="x" aria-label="Schließen">✕</button></div><div class="sh-body" id="listBody"></div></div>
 <div class="sheet" id="shMark"><div class="sh-head"><h2 id="mkTitle"></h2><button class="x" aria-label="Schließen">✕</button></div><div class="sh-body" id="mkBody"></div></div>
 <div class="sheet" id="shShare"><div class="sh-head"><h2>Bild teilen</h2><button class="x" aria-label="Schließen">✕</button></div>
-  <div class="sh-body"><img id="prevImg" alt="Vorschau"><div class="muted" id="prevNote" style="margin-top:8px"></div></div>
+  <div class="sh-body"><img id="prevImg" alt="Vorschau"><div class="muted" id="prevNote" style="margin-top:8px"></div><label class="chk"><input type="checkbox" id="expCoord"><span>Koordinaten (MGRS) aller Marker in die Legende</span></label></div>
   <div class="sh-foot"><button class="btn" id="bSave">Bild speichern</button><button class="btn pri" id="bSend">Senden (Signal, WhatsApp …)</button></div></div>
 
 <script>/* @preserve
@@ -990,7 +999,7 @@ button.fl:active{filter:brightness(.92)}
    Eine Datei, Android + iOS. Grundlage: Einsatzleiterheft (basemap.at, Nominatim, Raster, Farbcodes).
    Farbcodes Rahmen im Uhrzeigersinn: Weiß (unten), Grün (links), Schwarz (oben), Rot (rechts).
 */
-const VERSION='1.6';
+const VERSION='1.7';
 const isLocked=()=>!!DB.locked;
 const BM='https://mapsneu.wien.gv.at/basemap/';
 const LAYERS={
@@ -1190,6 +1199,7 @@ function initMap(){
   posL=L.layerGroup().addTo(map);
   L.control.scale({imperial:false,position:'bottomleft',maxWidth:110}).addTo(map);
   map.on('click',onMapClick);
+  map.on('contextmenu',e=>{ if(e.originalEvent&&e.originalEvent.preventDefault) e.originalEvent.preventDefault(); if(tool) return; showPointPopup(e.latlng.lat,e.latlng.lng,'Punkt auf der Karte'); });
   map.on('moveend',()=>{ const c=map.getCenter(); P.view={lat:c.lat,lng:c.lng,z:map.getZoom()}; save(); });
   map.on('zoomend',()=>{ drawGrid(); if(selFrame) drawHandles(); if(selShape) drawShapeHandles(); });
 }
@@ -1236,6 +1246,62 @@ function placeMark(t,ll){
 }
 function markHTML(t,v,extra){ if(t==='S') return `<div class="mkw"><div class="mks${extra?' '+extra:''}">${symSVG(v)}</div></div>`; return `<div class="mkw"><div class="mk ${TYPES[t].cls}${extra?' '+extra:''}">${esc(v)}</div></div>`; }
 /* Antippen: kleines Fenster mit Notiz (nur hier sichtbar) */
+/* ---------- Koordinaten: DD, DM, DMS, UTM, MGRS (WGS84) ---------- */
+const CFMTS=['MGRS','UTM','DD','DM','DMS'];
+function utmZone(lat,lon){ let z=Math.floor((lon+180)/6)+1; if(lat>=56&&lat<64&&lon>=3&&lon<12) z=32;
+  if(lat>=72&&lat<84){ if(lon>=0&&lon<9) z=31; else if(lon>=9&&lon<21) z=33; else if(lon>=21&&lon<33) z=35; else if(lon>=33&&lon<42) z=37; } return z; }
+function toUTM(lat,lon){
+  const a=6378137, f=1/298.257223563, k0=.9996, e2=f*(2-f), ep2=e2/(1-e2);
+  const z=utmZone(lat,lon), l0=((z-1)*6-180+3)*Math.PI/180, p=lat*Math.PI/180, l=lon*Math.PI/180;
+  const sp=Math.sin(p), cp=Math.cos(p), N=a/Math.sqrt(1-e2*sp*sp), T=Math.tan(p)**2, C=ep2*cp*cp, A=cp*(l-l0);
+  const M=a*((1-e2/4-3*e2*e2/64-5*e2**3/256)*p-(3*e2/8+3*e2*e2/32+45*e2**3/1024)*Math.sin(2*p)+(15*e2*e2/256+45*e2**3/1024)*Math.sin(4*p)-(35*e2**3/3072)*Math.sin(6*p));
+  const E=k0*N*(A+(1-T+C)*A**3/6+(5-18*T+T*T+72*C-58*ep2)*A**5/120)+500000;
+  let Nn=k0*(M+N*Math.tan(p)*(A*A/2+(5-T+9*C+4*C*C)*A**4/24+(61-58*T+T*T+600*C-330*ep2)*A**6/720)); if(lat<0) Nn+=1e7;
+  const band='CDEFGHJKLMNPQRSTUVWX'[Math.max(0,Math.min(19,Math.floor((lat+80)/8)))];
+  return {z,band,E,N:Nn};
+}
+function toMGRS(lat,lon){
+  const u=toUTM(lat,lon); const sets=['ABCDEFGH','JKLMNPQR','STUVWXYZ'], rows='ABCDEFGHJKLMNPQRSTUV';
+  const col=sets[(u.z-1)%3][Math.floor(u.E/1e5)-1], row=rows[(Math.floor(u.N/1e5)+(u.z%2===0?5:0))%20];
+  const p5=v=>String(Math.floor(v)%100000).padStart(5,'0');
+  return `${u.z}${u.band} ${col}${row} ${p5(u.E)} ${p5(u.N)}`;
+}
+function fmtCoord(lat,lng,f){
+  const dec=(v,n)=>v.toFixed(n).replace('.',',');
+  const hl=(v,p,n)=>v>=0?p:n;
+  if(f==='MGRS') return toMGRS(lat,lng);
+  if(f==='UTM'){ const u=toUTM(lat,lng); return `${u.z}${u.band} ${Math.floor(u.E)} E ${Math.floor(u.N)} N`; }
+  if(f==='DD') return `${dec(Math.abs(lat),5)}° ${hl(lat,'N','S')}\n${dec(Math.abs(lng),5)}° ${hl(lng,'E','W')}`;
+  const dm=(v,p,n)=>{ const a=Math.abs(v); let d=Math.floor(a), m=(a-d)*60; if(+m.toFixed(3)>=60){ d++; m=0; } return `${hl(v,p,n)} ${d}° ${dec(m,3)}′`; };
+  const dms=(v,p,n)=>{ const a=Math.abs(v); let d=Math.floor(a), m=Math.floor((a-d)*60), s=((a-d)*60-m)*60; if(+s.toFixed(1)>=60){ s=0; m++; } if(m>=60){ m=0; d++; } return `${hl(v,p,n)} ${d}° ${m}′ ${dec(s,1)}″`; };
+  if(f==='DM') return dm(lat,'N','S')+'\n'+dm(lng,'E','W');
+  return dms(lat,'N','S')+'\n'+dms(lng,'E','W');
+}
+function coordFmt(){ return CFMTS.includes(DB.cfmt)? DB.cfmt : 'MGRS'; }
+async function copyText(t){
+  try{ await navigator.clipboard.writeText(t); return true; }catch(e){}
+  try{ const ta=h('textarea',{style:'position:fixed;left:-999px;top:0'}); ta.value=t; document.body.append(ta); ta.select(); const ok=document.execCommand('copy'); ta.remove(); return ok; }catch(e){ return false; }
+}
+function coordBox(lat,lng){
+  const val=h('button',{class:'cval','aria-label':'Koordinate kopieren'});
+  const seg=h('div',{class:'cfmt'});
+  const upd=()=>{ const f=coordFmt(); val.textContent=fmtCoord(lat,lng,f); seg.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.f===f)); };
+  CFMTS.forEach(f=>seg.append(h('button',{'data-f':f,onclick:e=>{ e.stopPropagation(); DB.cfmt=f; saveNow(); upd(); }},f)));
+  val.onclick=async e=>{ e.stopPropagation(); const ok=await copyText(val.textContent.replace(/\n/g,'  ')); toast(ok?'Koordinate kopiert':'Kopieren nicht möglich'); };
+  upd();
+  return h('div',{class:'cbox'},val,seg);
+}
+
+function showPointPopup(lat,lng,title,sub){
+  if(selFrame||selShape) deselectFrame();
+  const feld=feldAt(lat,lng);
+  const div=h('div',{class:'mpop'},
+    h('div',{class:'mtop'},h('b',null,title),feld?h('span',{class:'muted'},'Feld '+feld):null),
+    sub? h('div',{class:'muted'},sub) : null,
+    coordBox(lat,lng),
+    h('div',{class:'muted',style:'font-size:12px'},'Antippen der Koordinate kopiert sie.'));
+  L.popup({offset:[0,-6],closeButton:true,autoPanPadding:[20,90],maxWidth:300,minWidth:0,className:'mpopw'}).setLatLng([lat,lng]).setContent(div).openOn(map);
+}
 function showMarkPopup(id){
   const m=P.marks.find(x=>x.id===id); if(!m) return;
   if(tool) setTool(null); if(selFrame||selShape) deselectFrame();
@@ -1243,10 +1309,11 @@ function showMarkPopup(id){
   const div=h('div',{class:'mpop'},
     h('div',{class:'mtop'}, h('b',null,mname(m)), feld? h('span',{class:'muted'},'Feld '+feld):null),
     m.note? h('div',{class:'note'},m.note) : null,
+    coordBox(m.lat,m.lng),
     isLocked()? h('div',{class:'muted'},'🔒') : h('div',{class:'micons'},
       h('button',{class:'ib','aria-label':'Bearbeiten',onclick:()=>{ map.closePopup(); openMark(m.id); }},'✎'),
       h('button',{class:'ib del','aria-label':'Löschen',onclick:()=>{ map.closePopup(); pushUndo(); P.marks=P.marks.filter(x=>x.id!==m.id); save(); drawMarks(); toast(mname(m)+' gelöscht (Zurück macht es rückgängig)'); }},'🗑')));
-  L.popup({offset:[0,-14],closeButton:false,autoPanPadding:[20,90],maxWidth:220,minWidth:0,className:'mpopw'}).setLatLng([m.lat,m.lng]).setContent(div).openOn(map);
+  L.popup({offset:[0,-14],closeButton:false,autoPanPadding:[20,90],maxWidth:300,minWidth:0,className:'mpopw'}).setLatLng([m.lat,m.lng]).setContent(div).openOn(map);
 }
 function drawMarks(){ markL.clearLayers(); for(const k in markerObjs) delete markerObjs[k]; P.marks.forEach(drawMark); }
 function drawMark(m){
@@ -1728,7 +1795,7 @@ function renderList(){
       list.append(h('div',{class:'li'},
         h('div',{class:'li-go',onclick:()=>zoomToMark(m.id)},
           h('span',{html:markHTML(m.t,m.v),class:'mkw'}),
-          h('div',{class:'t'},h('b',null,m.note||(mlong(m))),h('span',null,(m.note?mlong(m):'ohne Anmerkung')+(feld?' · Feld '+feld:'')))),
+          h('div',{class:'t'},h('b',null,m.note||(mlong(m))),h('span',null,(m.note?mlong(m):'ohne Anmerkung')+(feld?' · Feld '+feld:'')),h('span',{class:'lmgrs'},toMGRS(m.lat,m.lng)))),
         isLocked()? null : h('button',{class:'btn sm',onclick:()=>{ closeSheets(); openMark(m.id); },'aria-label':'Bearbeiten'},'✎')));
     });
     b.append(h('h3',null,TYPES[t].long), list);
@@ -1834,7 +1901,8 @@ let posWatch=null, lastPos=null, jumpNext=false;
 function showPos(p){
   const ll=[p.coords.latitude,p.coords.longitude]; lastPos={ll,acc:p.coords.accuracy};
   if(!posAcc){ posAcc=L.circle(ll,{radius:p.coords.accuracy,color:'#2563eb',weight:1,fillOpacity:.12,interactive:false}).addTo(posL);
-    posDot=L.marker(ll,{interactive:false,keyboard:false,zIndexOffset:-500,icon:L.divIcon({className:'',html:'<div class="posdot"></div>',iconSize:[18,18],iconAnchor:[9,9]})}).addTo(posL); }
+    posDot=L.marker(ll,{interactive:true,keyboard:false,zIndexOffset:-500,icon:L.divIcon({className:'',html:'<div class="posdot"></div>',iconSize:[26,26],iconAnchor:[13,13]})}).addTo(posL);
+    posDot.on('click',e=>{ if(e.originalEvent) e.originalEvent._gt=1; if(lastPos) showPointPopup(lastPos.ll[0],lastPos.ll[1],'Mein Standort',lastPos.acc?'Genauigkeit ± '+Math.round(lastPos.acc)+' m':''); }); }
   else { posAcc.setLatLng(ll).setRadius(p.coords.accuracy); posDot.setLatLng(ll); }
   $('bLoc').classList.add('active');
   if(jumpNext){ jumpNext=false; map.setView(ll,Math.max(map.getZoom(),18)); toast('Eigener Standort (± '+Math.round(p.coords.accuracy)+' m)'); }
@@ -1918,14 +1986,15 @@ async function renderImage(){
   const W=Math.round(cr.width)-X0, H=Math.max(200,Y1-Y0), SC=2;
   /* Legende vorbereiten */
   const used=['L','A','R'].filter(t=>P.marks.some(m=>m.t===t));
-  const notes=[...P.marks].filter(m=>m.note&&m.note.trim()).sort((a,c)=>'LAR'.indexOf(a.t)-'LAR'.indexOf(c.t)||a.v.localeCompare(c.v,'de',{numeric:true}));
+  const expC=!!DB.expCoord;
+  const notes=[...P.marks].filter(m=>expC||(m.note&&m.note.trim())).sort((a,c)=>'LARS'.indexOf(a.t)-'LARS'.indexOf(c.t)||String(a.v).localeCompare(String(c.v),'de',{numeric:true}));
   const meas=document.createElement('canvas').getContext('2d'); meas.font='14px Arial';
   const legItems=[]; if(P.frames.length) legItems.push({k:'G',txt:'Rahmen: Weiß unten, Grün links, Schwarz oben, Rot rechts'});
   used.forEach(t=>legItems.push({k:t,txt:TYPES[t].long}));
   [...new Set(P.marks.filter(m=>m.t==='S').map(m=>m.v))].filter(id=>SYM[id]).forEach(id=>legItems.push({k:'S',sid:id,txt:SYM[id].n}));
   await Promise.all(P.marks.filter(m=>m.t==='S').map(m=>{ const im=symImg(m.v); return im.complete&&im.naturalWidth? 0 : new Promise(r=>{ im.onload=im.onerror=r; setTimeout(r,1500); }); }));
   legItems.forEach(it=>{ it.lines=wrapLines(meas,it.txt,W-70); });
-  const noteLines=[]; notes.forEach(m=>{ wrapLines(meas,m.note.trim(),W-80).forEach((l,i)=>noteLines.push({m:i?null:m,l})); });
+  const noteLines=[]; notes.forEach(m=>{ const nt=(m.note||'').trim(); wrapLines(meas,expC?(toMGRS(m.lat,m.lng)+(nt?'  '+nt:'')):nt,W-80).forEach((l,i)=>noteLines.push({m:i?null:m,l})); });
   const HEAD=P.addr?62:44, LEG=(legItems.length?legItems.reduce((a,it)=>a+Math.max(38,it.lines.length*18+16),0)+12:0)+(noteLines.length?noteLines.length*24+14:0), FOOT=LEG+26;
   const cv=document.createElement('canvas'); cv.width=W*SC; cv.height=(HEAD+H+FOOT)*SC;
   const ctx=cv.getContext('2d'); ctx.scale(SC,SC);
@@ -2037,6 +2106,7 @@ async function exportImage(){
   $('bSend').style.display=can?'':'none';
   $('prevNote').textContent=(can?'„Senden“ öffnet das Teilen-Menü: dort Signal oder WhatsApp wählen und die Gruppe antippen.':'Teilen wird von diesem Browser nicht unterstützt: Bild speichern und in Signal oder WhatsApp als Foto anhängen.')
     +(res.nT?'':' Hinweis: Das Kartenbild fehlt (offline oder noch nicht geladen).');
+  const ec=$('expCoord'); if(ec){ ec.checked=!!DB.expCoord; ec.onchange=()=>{ DB.expCoord=ec.checked; saveNow(); exportImage(); }; }
   openSheet('shShare');
 }
 async function sendImage(){
