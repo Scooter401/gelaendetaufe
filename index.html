@@ -946,6 +946,17 @@ button.fl:active{filter:brightness(.92)}
   #tb #bLock.locked{background:#c81e1e}
   .leaflet-bottom{bottom:calc(var(--tb) + var(--sab))}
 }
+/* v1.13: untere Leiste auch hochkant durchsichtig */
+@media not all and (orientation:landscape) and (max-height:540px){
+#tb{background:none;box-shadow:none;pointer-events:none;gap:3px;padding:0 calc(var(--sar) + 4px) calc(var(--sab) + 6px) calc(var(--sal) + 4px)}
+#tb button{pointer-events:auto;height:50px;background:rgba(30,58,95,.82);box-shadow:0 1px 5px rgba(0,0,0,.35);border-radius:10px}
+#tb button.on{background:rgba(47,93,138,.95)}
+#tb button:disabled{opacity:1;color:rgba(255,255,255,.4)}
+#tb #bLock.locked{background:#c81e1e}
+#tb #bLoc.active{background:#2563eb}
+}
+/* iPhone als App (Startbildschirm): Seite bis ganz unten ziehen, kein weißer Streifen */
+@media (display-mode:standalone){ html,body{height:100vh;min-height:100%} body{bottom:auto} }
 /* Koordinaten im Popup */
 .cbox{display:flex;flex-direction:column;gap:5px;margin-top:2px}
 .cval{width:204px;resize:none;overflow:hidden;display:block;min-height:40px;white-space:pre!important;border:1.5px solid var(--line);background:#f5f7fa;border-radius:8px;padding:6px 8px;font:700 15.5px/1.3 ui-monospace,Menlo,Consolas,monospace;font-size:16px;letter-spacing:-.4px;color:#111;text-align:left;-webkit-user-select:text;user-select:text}
@@ -1035,7 +1046,7 @@ button.fl:active{filter:brightness(.92)}
    Eine Datei, Android + iOS. Grundlage: Einsatzleiterheft (basemap.at, Nominatim, Raster, Farbcodes).
    Farbcodes Rahmen im Uhrzeigersinn: Weiß (unten), Grün (links), Schwarz (oben), Rot (rechts).
 */
-const VERSION='1.12';
+const VERSION='1.13';
 const isLocked=()=>!!DB.locked;
 const BM='https://mapsneu.wien.gv.at/basemap/';
 const LAYERS={
