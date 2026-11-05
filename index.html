@@ -1035,7 +1035,7 @@ button.fl:active{filter:brightness(.92)}
    Eine Datei, Android + iOS. Grundlage: Einsatzleiterheft (basemap.at, Nominatim, Raster, Farbcodes).
    Farbcodes Rahmen im Uhrzeigersinn: Weiß (unten), Grün (links), Schwarz (oben), Rot (rechts).
 */
-const VERSION='1.11';
+const VERSION='1.12';
 const isLocked=()=>!!DB.locked;
 const BM='https://mapsneu.wien.gv.at/basemap/';
 const LAYERS={
@@ -2412,13 +2412,17 @@ function packProject(kind){
 async function shareData(kind){
   saveNow();
   const txt=JSON.stringify(packProject(kind));
-  const file=new File([txt],fileBase(kind)+'.json',{type:'application/json'});
   const what=kind==='layer'?'Layer (nur lesen)':'Datei (bearbeitbar)';
-  if(navigator.canShare&&navigator.canShare({files:[file]})){
-    try{ await navigator.share({files:[file],title:file.name}); return; }catch(e){ if(e.name==='AbortError') return; }
+  /* WhatsApp/Signal: Android teilt nur bekannte Dateitypen (.txt geht, .json nicht) */
+  const cands=[new File([txt],fileBase(kind)+'.txt',{type:'text/plain'}), new File([txt],fileBase(kind)+'.json',{type:'application/json'})];
+  if(navigator.share&&navigator.canShare){
+    for(const f of cands){ let ok=false; try{ ok=navigator.canShare({files:[f]}); }catch(e){}
+      if(!ok) continue;
+      try{ await navigator.share({files:[f]}); return; }catch(e){ if(e.name==='AbortError') return; } }
   }
-  const u=URL.createObjectURL(file); const a=h('a',{href:u,download:file.name}); document.body.append(a); a.click(); setTimeout(()=>{ a.remove(); URL.revokeObjectURL(u); },2000);
-  toast(what+' gespeichert (Downloads / Dateien).');
+  const blob=new Blob([txt],{type:'application/octet-stream'});
+  const u=URL.createObjectURL(blob); const a=h('a',{href:u,download:cands[0].name}); document.body.append(a); a.click(); setTimeout(()=>{ a.remove(); URL.revokeObjectURL(u); },4000);
+  toast(navigator.share? what+' gespeichert (Downloads / Dateien).' : what+' gespeichert. Direktes Teilen geht nur in der App über die GitHub-Adresse.');
 }
 function importText(txt,srcName){
   let d; try{ d=JSON.parse(txt); }catch(e){ toast('Datei nicht lesbar.'); return false; }
@@ -2441,7 +2445,7 @@ function fitTo(p){ const pts=[]; (p.marks||[]).forEach(m=>pts.push([m.lat,m.lng]
   if(pts.length) map.fitBounds(L.latLngBounds(pts).pad(.25),{maxZoom:19,animate:false}); else if(p.view) map.setView([p.view.lat,p.view.lng],p.view.z,{animate:false}); }
 function pickImport(){
   const inp=h('input',{type:'file',accept:'.json,application/json,text/plain,*/*',style:'display:none'});
-  inp.onchange=async()=>{ const f=inp.files&&inp.files[0]; inp.remove(); if(!f) return; closeSheets(); importText(await f.text(),f.name.replace(/\.json$/i,'')); };
+  inp.onchange=async()=>{ const f=inp.files&&inp.files[0]; inp.remove(); if(!f) return; closeSheets(); importText(await f.text(),f.name.replace(/\.(json|txt)$/i,'')); };
   document.body.append(inp); inp.click();
 }
 /* Datei kommt von außen: Android „Teilen mit … Geländetaufe“ (Service Worker) oder Datei-Öffnen (Chrome) */
@@ -2449,7 +2453,7 @@ async function checkIncoming(){
   try{ if(/[?&]shared=1/.test(location.search)&&'caches' in window){ const c=await caches.open('gt-share'); const r=await c.match('./shared-file');
       if(r){ const t=await r.text(); await c.delete('./shared-file'); importText(t,decodeURIComponent(r.headers.get('x-name')||'Import')); }
       history.replaceState(null,'',location.pathname); } }catch(e){}
-  try{ if('launchQueue' in window) launchQueue.setConsumer(async lp=>{ for(const fh of (lp.files||[])){ const f=await fh.getFile(); importText(await f.text(),f.name.replace(/\.json$/i,'')); } }); }catch(e){}
+  try{ if('launchQueue' in window) launchQueue.setConsumer(async lp=>{ for(const fh of (lp.files||[])){ const f=await fh.getFile(); importText(await f.text(),f.name.replace(/\.(json|txt)$/i,'')); } }); }catch(e){}
 }
 
 /* ---------- Gebiet offline speichern ---------- */

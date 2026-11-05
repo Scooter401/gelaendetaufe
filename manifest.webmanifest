@@ -48,6 +48,9 @@
    "accept": {
     "application/json": [
      ".json"
+    ],
+    "text/plain": [
+     ".txt"
     ]
    }
   }
