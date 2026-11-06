@@ -992,6 +992,12 @@ button.fl:active{filter:brightness(.92)}
 #rinfo{position:absolute;z-index:900;left:calc(var(--sal) + 10px);right:calc(var(--sar,0px) + 10px);top:calc(var(--sat) + 78px);margin:0 auto;max-width:420px;display:none;align-items:center;gap:8px;background:rgba(17,24,39,.88);color:#fff;border-radius:12px;padding:7px 8px 7px 12px;font-size:13px;font-weight:600;line-height:1.35;box-shadow:0 2px 8px rgba(0,0,0,.3)}
 #rinfo span{white-space:pre-line;flex:1}
 #rinfo button{border:0;background:rgba(255,255,255,.15);color:#fff;width:30px;height:30px;border-radius:8px;font-size:15px;flex:none}
+.plist{display:flex;flex-direction:column;gap:5px;max-height:46vh;overflow:auto;margin-top:4px;min-width:220px}
+.plist button{display:flex;align-items:center;gap:10px;min-height:46px;border:1.5px solid var(--line);background:#fff;border-radius:10px;padding:4px 10px;text-align:left;font-size:14.5px;font-weight:600;color:var(--ink)}
+.plist button:active{background:#e3ecf7}
+.pli{flex:none;width:44px;display:flex;align-items:center;justify-content:center;pointer-events:none}
+.pli .mkw{transform:scale(.8)}
+.pln{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>
 </head><body>
 <div id="map"></div>
@@ -1046,7 +1052,7 @@ button.fl:active{filter:brightness(.92)}
    Eine Datei, Android + iOS. Grundlage: Einsatzleiterheft (basemap.at, Nominatim, Raster, Farbcodes).
    Farbcodes Rahmen im Uhrzeigersinn: Weiß (unten), Grün (links), Schwarz (oben), Rot (rechts).
 */
-const VERSION='1.13';
+const VERSION='1.14';
 const isLocked=()=>!!DB.locked;
 const BM='https://mapsneu.wien.gv.at/basemap/';
 const LAYERS={
@@ -1430,11 +1436,11 @@ function drawMarks(){ markL.clearLayers(); for(const k in markerObjs) delete mar
 function drawMark(m,ro){
   const lbl=(m.show&&m.note&&m.note.trim())? `<div class="mnote${m.t==="S"?" s":""}">${esc(m.note.trim())}</div>` : '';
   const icon=m.t==='S'? L.divIcon({className:'mwrap',html:markHTML(m.t,m.v)+lbl,iconSize:[38,38],iconAnchor:[19,19]}) : L.divIcon({className:'mwrap',html:markHTML(m.t,m.v)+lbl,iconSize:[64,38],iconAnchor:[32,19]});
-  if(ro){ const mk=L.marker([m.lat,m.lng],{icon,keyboard:false,zIndexOffset:-50}).addTo(roL); mk.on('click',e=>{ if(e.originalEvent) e.originalEvent._gt=1; showRoPopup(m,ro); }); return; }
+  if(ro){ const mk=L.marker([m.lat,m.lng],{icon,keyboard:false,zIndexOffset:-50}).addTo(roL); mk.on('click',e=>{ if(e.originalEvent) e.originalEvent._gt=1; if(multiPick(e)) return; showRoPopup(m,ro); }); return; }
   const mk=L.marker([m.lat,m.lng],{icon,draggable:!isLocked(),autoPan:true,keyboard:false,zIndexOffset:m.t==='L'?0:m.t==='S'?50:100}).addTo(markL);
   mk.on('dragstart',()=>pushUndo());
   mk.on('dragend',()=>{ const p=mk.getLatLng(); m.lat=p.lat; m.lng=p.lng; save(); if(curMark===m.id) openMark(m.id); });
-  mk.on('click',()=>showMarkPopup(m.id));
+  mk.on('click',e=>{ if(multiPick(e)) return; showMarkPopup(m.id); });
   markerObjs[m.id]=mk;
 }
 
@@ -1452,7 +1458,7 @@ function drawFrame(f,ro){
   const g=L.layerGroup(); const c=frameCorners(f); const sel=!ro&&selFrame===f.id;
   const op=f.op??1;
   const area=L.polygon(c,{pane:'frames',stroke:false,fillColor:'#2563eb',fillOpacity:sel?.12:.001,bubblingMouseEvents:true}).addTo(g);
-  if(ro) area.options.interactive=false; else area.on('click',e=>{ if(tool||isLocked()) return; e.originalEvent._gt=1; selectFrame(f.id); });
+  if(ro) area.options.interactive=false; else area.on('click',e=>{ if(tool||isLocked()) return; e.originalEvent._gt=1; if(multiPick(e)) return; selectFrame(f.id); });
   SIDES.forEach(([a,b,col])=>{
     L.polyline([c[a],c[b]],{pane:'frames',color:'#111',weight:11,opacity:.9*op,lineCap:'square',interactive:false}).addTo(g);
     L.polyline([c[a],c[b]],{pane:'frames',color:col,weight:7,opacity:op,lineCap:'square',interactive:false}).addTo(g);
@@ -1638,9 +1644,9 @@ function drawShape(s,ro){
   if(s.hatch&&s.k!=='arrow') applyHatch(main,col,s.hatch);
   if(lay.segs) lay.segs.forEach(seg=>L.polyline(seg,Object.assign({},st,{fill:false,lineCap:'butt',smoothFactor:0})).addTo(g));
   if(ro) g.eachLayer(l=>{ if(l.options) l.options.interactive=false; });
-  else g.eachLayer(l=>l.on('click',e=>{ if(tool||isLocked()) return; e.originalEvent._gt=1; selectShape(s.id); }));
+  else g.eachLayer(l=>l.on('click',e=>{ if(tool||isLocked()) return; e.originalEvent._gt=1; if(multiPick(e)) return; selectShape(s.id); }));
   if(s.sec){ const sm=L.marker(shapeCenter(s),{pane:'shapes',keyboard:false,interactive:!ro,icon:L.divIcon({className:'mwrap',html:markHTML('L',s.sec),iconSize:[64,38],iconAnchor:[32,19]})}).addTo(g);
-    if(!ro) sm.on('click',e=>{ if(tool||isLocked()) return; if(e.originalEvent) e.originalEvent._gt=1; selectShape(s.id); }); }
+    if(!ro) sm.on('click',e=>{ if(tool||isLocked()) return; if(e.originalEvent) e.originalEvent._gt=1; if(multiPick(e)) return; selectShape(s.id); }); }
   const lt=isLight(col);
   lay.labels.forEach(lg=>L.marker(lg.ll,{pane:'shapes',interactive:false,keyboard:false,icon:L.divIcon({className:'slbl'+(lt?' lt':''),iconSize:[0,0],
       html:`<span style="color:${col};opacity:${Math.max(op,.6)};font-size:${lg.fs||lay.fs}px;transform:translate(-50%,-50%) translate(${lg.ox.toFixed(1)}px,${lg.oy.toFixed(1)}px) rotate(${lg.ang.toFixed(1)}deg)">${esc(s.label)}</span>`})}).addTo(g));
@@ -2080,6 +2086,41 @@ function goTo(lat,lng,label){
   searchPin=L.marker([lat,lng],{interactive:false,keyboard:false,zIndexOffset:-1000,icon:L.divIcon({className:'',html:'<div class="searchpin"></div>',iconSize:[22,22],iconAnchor:[11,24]})}).addTo(posL);
   setTimeout(()=>{ if(searchPin){ posL.removeLayer(searchPin); searchPin=null; } },20000);
   toast(label);
+}
+
+/* ---------- Auswahl, wenn mehrere Objekte unter dem Finger liegen ---------- */
+function segDist(p,a,b){ const dx=b.x-a.x, dy=b.y-a.y, l=dx*dx+dy*dy; let t=l?((p.x-a.x)*dx+(p.y-a.y)*dy)/l:0; t=Math.max(0,Math.min(1,t)); return Math.hypot(p.x-a.x-t*dx,p.y-a.y-t*dy); }
+function inPolyPx(p,q){ let c=false; for(let i=0,j=q.length-1;i<q.length;j=i++){ if(((q[i].y>p.y)!==(q[j].y>p.y))&&(p.x<(q[j].x-q[i].x)*(p.y-q[i].y)/(q[j].y-q[i].y)+q[i].x)) c=!c; } return c; }
+function edgeDist(p,q,closed){ let d=1e9; for(let i=0;i<q.length-(closed?0:1);i++) d=Math.min(d,segDist(p,q[i],q[(i+1)%q.length])); return d; }
+function hitsAt(cp){
+  const px=ll=>map.latLngToContainerPoint(ll), out=[], lk=isLocked();
+  const markHit=(m)=>{ const q=px([m.lat,m.lng]); return Math.abs(q.x-cp.x)<=(m.t==='S'?20:24)&&Math.abs(q.y-cp.y)<=20; };
+  const shapeHit=s=>{ const sw=s.sw??(s.k==='arrow'?5:3), tol=sw/2+10;
+    if(s.sec){ const c=px(shapeCenter(s)); if(Math.abs(c.x-cp.x)<=24&&Math.abs(c.y-cp.y)<=20) return true; }
+    if(s.k==='circle'){ const c=px([s.lat,s.lng]); const rp=Math.abs(px(fromM(s.lat,s.lng,s.r,0)).x-c.x); return Math.hypot(cp.x-c.x,cp.y-c.y)<=rp+tol; }
+    if(s.k==='arrow'){ const a=arrowGeom(s); return edgeDist(cp,a.line.map(px),false)<=tol||inPolyPx(cp,a.head.map(px)); }
+    const q=(s.k==='rect'?frameCorners(s):s.pts).map(px); return inPolyPx(cp,q)||edgeDist(cp,q,true)<=tol; };
+  const frameHit=f=>{ const q=frameCorners(f).map(px); return inPolyPx(cp,q)||edgeDist(cp,q,true)<=14; };
+  const shapeName=s=>s.sec? 'Sektor '+s.sec+(s.label?' – '+s.label:'') : SHAPE_N[s.k]+(s.label?' „'+s.label+'“':'');
+  const shapeIco=s=>s.sec? markHTML('L',s.sec) : `<span style="color:${s.color||DEF_COL}">${SHAPE_ICON[s.k]||''}</span>`;
+  [...P.marks].reverse().forEach(m=>{ if(markHit(m)) out.push({n:mname(m)+(m.note?' – '+m.note.trim().slice(0,30):''),ico:markHTML(m.t,m.v),fn:()=>showMarkPopup(m.id)}); });
+  if(!lk){
+    [...(P.shapes||[])].reverse().forEach(s=>{ if(shapeHit(s)) out.push({n:shapeName(s),ico:shapeIco(s),fn:()=>selectShape(s.id)}); });
+    [...P.frames].reverse().forEach((f,i)=>{ if(frameHit(f)) out.push({n:'Rahmen'+(P.frames.length>1?' '+(P.frames.length-i):''),ico:SHAPE_ICON.frame,fn:()=>selectFrame(f.id)}); });
+  }
+  visLayers().forEach(l=>(l.data.marks||[]).forEach(m=>{ if(markHit(m)) out.push({n:mname(m)+' 🔒 '+(l.name||'Layer'),ico:markHTML(m.t,m.v),fn:()=>showRoPopup(m,l)}); }));
+  return out;
+}
+function multiPick(e){
+  if(tool||!e||!e.containerPoint) return false;
+  if(e.originalEvent) e.originalEvent._gt=1;
+  const hits=hitsAt(e.containerPoint); if(hits.length<2) return false;
+  if(selFrame||selShape) deselectFrame();
+  const list=h('div',{class:'plist'});
+  hits.forEach(x=>list.append(h('button',{onclick:ev=>{ ev.stopPropagation(); map.closePopup(); x.fn(); }},h('span',{class:'pli',html:x.ico}),h('span',{class:'pln'},x.n))));
+  const div=h('div',{class:'mpop'},h('div',{class:'mtop'},h('b',null,'Welches Objekt?'),h('span',{class:'muted'},hits.length+' hier')),list);
+  L.popup({offset:[0,-6],closeButton:true,autoPanPadding:[20,90],maxWidth:300,minWidth:0,className:'mpopw'}).setLatLng(e.latlng).setContent(div).openOn(map);
+  return true;
 }
 
 /* ---------- Zielpunkt (Fadenkreuz) und Route ---------- */
