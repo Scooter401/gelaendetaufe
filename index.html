@@ -1052,15 +1052,17 @@ button.fl:active{filter:brightness(.92)}
    Eine Datei, Android + iOS. Grundlage: Einsatzleiterheft (basemap.at, Nominatim, Raster, Farbcodes).
    Farbcodes Rahmen im Uhrzeigersinn: Weiß (unten), Grün (links), Schwarz (oben), Rot (rechts).
 */
-const VERSION='1.14';
+const VERSION='1.16';
 const isLocked=()=>!!DB.locked;
 const BM='https://mapsneu.wien.gv.at/basemap/';
 const LAYERS={
   ortho:{n:'Orthofoto', url:BM+'bmaporthofoto30cm/normal/google3857/{z}/{y}/{x}.jpeg', ov:true},
   karte:{n:'Karte',     url:BM+'geolandbasemap/normal/google3857/{z}/{y}/{x}.png'},
-  grau: {n:'Grau',      url:BM+'bmapgrau/normal/google3857/{z}/{y}/{x}.png'}
+  grau: {n:'Grau',      url:BM+'bmapgrau/normal/google3857/{z}/{y}/{x}.png'},
+  oek50:{n:'ÖK50',      url:'https://maps.bev.gv.at/tiles/karte/{z}/{x}/{y}.png', max:16, src:'bev'}
 };
-const LAYER_ORDER=['ortho','karte','grau'];
+const LAYER_ORDER=['ortho','karte','grau','oek50'];
+function srcTxt(k){ return (LAYERS[k]||{}).src==='bev'?'Austrian Map © BEV (CC BY 4.0)':'basemap.at'; }
 const OVERLAY=BM+'bmapoverlay/normal/google3857/{z}/{y}/{x}.png';
 const RED='#c81e1e', GREEN='#3f9d3f', BLACK='#111111', WHITE='#ffffff', YEL='#facc15';
 const SEQ_L='JKLMNPQRSTUVWXYZ';             // ab J, ohne O, endet bei Z
@@ -1261,11 +1263,12 @@ function initMap(){
 function setBase(){
   if(baseL) map.removeLayer(baseL); if(ovL){ map.removeLayer(ovL); ovL=null; }
   const Ld=LAYERS[P.layer]||LAYERS.ortho;
-  const opt={maxNativeZoom:19,maxZoom:21,keepBuffer:3};
-  baseL=new CacheLayer(Ld.url,Object.assign({attribution:'Karte: <a href="https://basemap.at" target="_blank" rel="noopener">basemap.at</a>'},opt)).addTo(map);
+  const opt={maxNativeZoom:Ld.max||19,maxZoom:21,keepBuffer:3};
+  const att=Ld.src==='bev'?'Karte: <a href="https://maps.bev.gv.at" target="_blank" rel="noopener">Austrian Map © BEV</a> (CC BY 4.0)':'Karte: <a href="https://basemap.at" target="_blank" rel="noopener">basemap.at</a>';
+  baseL=new CacheLayer(Ld.url,Object.assign({attribution:att},opt)).addTo(map);
   baseL.on('tileunload',unloadTile);
   if(Ld.ov){ ovL=new CacheLayer(OVERLAY,Object.assign({pane:'labels'},opt)).addTo(map); ovL.on('tileunload',unloadTile); }
-  const b=$('bLayer'); if(b) b.querySelector('.lb').textContent={ortho:'Ortho',karte:'Karte',grau:'Grau'}[P.layer]||Ld.n;
+  const b=$('bLayer'); if(b) b.querySelector('.lb').textContent={ortho:'Ortho',karte:'Karte',grau:'Grau',oek50:'ÖK50'}[P.layer]||Ld.n;
 }
 function unloadTile(e){ if(e.tile&&e.tile._ou){ try{URL.revokeObjectURL(e.tile._ou);}catch(x){} e.tile._ou=null; } }
 function drawAll(){ setBase(); drawGrid(); drawLayers(); drawShapes(); drawFrames(); drawMarks(); hdlL.clearLayers(); if(selFrame) drawHandles(); if(selShape) drawShapeHandles(); updTools(); }
@@ -1385,8 +1388,8 @@ function parseCoord(txt){
 }
 
 /* Koordinatenfeld: bearbeitbar (onSet), rechts Kopierknopf, darunter Formatknöpfe */
-function coordBox(lat,lng,onSet){
-  const ro=!onSet||isLocked();
+function coordBox(lat,lng,onSet,what,free){
+  const ro=!onSet||(!free&&isLocked());
   const val=h('textarea',{class:'cval',rows:1,wrap:'off',spellcheck:'false',autocapitalize:'characters',autocomplete:'off',enterkeyhint:'done','aria-label':'Koordinate'});
   if(ro) val.readOnly=true;
   const cp=h('button',{class:'ccopy','aria-label':'Koordinate kopieren',html:'<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2"/></svg>'});
@@ -1404,7 +1407,7 @@ function coordBox(lat,lng,onSet){
   val.addEventListener('blur',apply);
   val.addEventListener('input',()=>val.classList.remove('bad'));
   upd();
-  return h('div',{class:'cbox'},h('div',{class:'crow'},val,cp),seg,ro?null:h('div',{class:'muted',style:'font-size:11.5px'},'Koordinate ändern verschiebt den Marker.'));
+  return h('div',{class:'cbox'},h('div',{class:'crow'},val,cp),seg,ro?null:h('div',{class:'muted',style:'font-size:11.5px'},'Koordinate ändern verschiebt '+(what||'den Marker')+'.'));
 }
 
 function showPointPopup(lat,lng,title,sub){
@@ -2039,7 +2042,7 @@ function renderMenu(){
     h('details',null,h('summary',null,'Zwischenspeicher & Info'),
       cinfo,
       h('div',{class:'row'},h('button',{class:'btn sm',onclick:async()=>{ if(!confirm('Gespeicherte Kartenkacheln löschen? Marker und Geländetaufen bleiben erhalten.')) return; await tclear(); renderMenu(); toast('Zwischenspeicher geleert'); }},'Zwischenspeicher leeren')),
-      h('div',{class:'muted'},'Geländetaufe '+VERSION+' · Karte basemap.at (CC BY 4.0) · Adresssuche OpenStreetMap/Nominatim (© OpenStreetMap-Mitwirkende). Alle Eingaben bleiben nur auf diesem Gerät.')));
+      h('div',{class:'muted'},'Geländetaufe '+VERSION+' · Karten basemap.at (CC BY 4.0), ÖK50 Austrian Map © BEV (CC BY 4.0) · Adresssuche OpenStreetMap/Nominatim (© OpenStreetMap-Mitwirkende). Alle Eingaben bleiben nur auf diesem Gerät.')));
 }
 function switchProject(id){
   saveNow(); const p=DB.list.find(x=>x.id===id); if(!p) return;
@@ -2135,7 +2138,7 @@ function drawPoi(){
   poiMk=L.marker([q.lat,q.lng],{keyboard:false,zIndexOffset:2000,icon:L.divIcon({className:'poi',html:POI_SVG,iconSize:[48,48],iconAnchor:[24,24]})}).addTo(map);
   poiMk.on('click',e=>{ if(e.originalEvent) e.originalEvent._gt=1; showPoiPopup(); });
 }
-function setPoi(lat,lng){ const old=DB.poi; DB.poi={lat,lng}; saveNow(); drawPoi(); if(route&&old&&route.to[0]===old.lat&&route.to[1]===old.lng) startRoute(route.road,[lat,lng]); showPoiPopup(); }
+function setPoi(lat,lng,quiet){ const old=DB.poi; DB.poi={lat,lng}; saveNow(); drawPoi(); if(route&&old&&route.to[0]===old.lat&&route.to[1]===old.lng) startRoute(route.road,[lat,lng]); if(!quiet) showPoiPopup(); }
 function clearPoi(){ map.closePopup(); if(route&&DB.poi&&route.to[0]===DB.poi.lat&&route.to[1]===DB.poi.lng) stopRoute(); DB.poi=null; saveNow(); drawPoi(); toast('Zielpunkt entfernt'); }
 function showPoiPopup(){
   const q=DB.poi; if(!q) return; if(selFrame||selShape) deselectFrame();
@@ -2143,7 +2146,7 @@ function showPoiPopup(){
   const dist=distLine([q.lat,q.lng]);
   const div=h('div',{class:'mpop'},
     h('div',{class:'mtop'},h('b',null,'Zielpunkt'),feld?h('span',{class:'muted'},'Feld '+feld):null),
-    dist, coordBox(q.lat,q.lng),
+    dist, coordBox(q.lat,q.lng,(la,ln)=>{ map.closePopup(); setPoi(la,ln,true); map.panTo([la,ln]); setTimeout(showPoiPopup,350); toast('Zielpunkt verschoben'); },'den Zielpunkt',true),
     routeBtns([q.lat,q.lng],h('button',{class:'btn sm rdel',onclick:()=>clearPoi()},'🗑 Entfernen')));
   L.popup({offset:[0,-14],closeButton:true,autoPanPadding:[20,90],maxWidth:300,minWidth:0,className:'mpopw'}).setLatLng([q.lat,q.lng]).setContent(div).openOn(map);
 }
@@ -2396,7 +2399,7 @@ async function renderImage(full){
   if(noteLines.length){ y+=4; ctx.strokeStyle='#d5dbe3'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(12,y); ctx.lineTo(W-12,y); ctx.stroke(); y+=8;
     noteLines.forEach(n=>{ if(n.m){ ctx.save(); ctx.translate(30,y+11); ctx.scale(.72,.72); drawMarkCanvas(ctx,n.m.t,n.m.v,0,0); ctx.restore(); }
       ctx.fillStyle='#1f2937'; ctx.font='14px Arial'; ctx.textAlign='left'; ctx.fillText(n.l,58,y+11); y+=24; }); }
-  ctx.fillStyle='#6b7280'; ctx.font='10px Arial'; ctx.textAlign='left'; ctx.fillText('Karte: basemap.at · Geländetaufe Version '+VERSION,12,HEAD+H+FOOT-11);
+  ctx.fillStyle='#6b7280'; ctx.font='10px Arial'; ctx.textAlign='left'; ctx.fillText('Karte: '+srcTxt(P.layer)+' · Geländetaufe Version '+VERSION,12,HEAD+H+FOOT-11);
   return {cv,nT,bad};
 }
 let shareFile=null, shareURL=null;
@@ -2521,8 +2524,8 @@ let offlineRun=null;
 async function saveOffline(){
   if(offlineRun){ offlineRun.stop=true; return; }
   if(navigator.onLine===false){ toast('Dafür wird Internet gebraucht.'); return; }
-  const b=map.getBounds(), z=Math.max(12,Math.round(map.getZoom()));
-  let z1=Math.min(19,z+3), urls=tileUrls(b,Math.max(10,z-3),z1);
+  const b=map.getBounds(), z=Math.min(LAYERS[P.layer].max||19,Math.max(12,Math.round(map.getZoom())));
+  let z1=Math.min(LAYERS[P.layer].max||19,z+3), urls=tileUrls(b,Math.max(10,z-3),z1);
   while(urls.length>4000&&z1>z){ z1--; urls=tileUrls(b,Math.max(10,z-3),z1); }
   if(urls.length>4000){ toast('Ausschnitt zu groß – bitte weiter hineinzoomen.'); return; }
   const mb=Math.round(urls.length*(P.layer==='ortho'?.03:.015));
