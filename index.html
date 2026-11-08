@@ -998,6 +998,17 @@ button.fl:active{filter:brightness(.92)}
 .pli{flex:none;width:44px;display:flex;align-items:center;justify-content:center;pointer-events:none}
 .pli .mkw{transform:scale(.8)}
 .pln{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Export-Ausschnitt (v1.17) */
+#hint.panel .seg{border-color:rgba(255,255,255,.35);flex:1}
+#hint.panel .seg button{flex:1;height:34px;border-radius:0;background:transparent;color:#fff;padding:0 6px}
+#hint.panel .seg button+button{border-left-color:rgba(255,255,255,.35)}
+#hint.panel .seg button.on{background:#fff;color:var(--ink)}
+#hint button.pri{background:#2563eb;color:#fff}
+#hint .echk{display:flex;align-items:center;gap:6px;font-size:13px;white-space:nowrap}
+#hint .echk input{width:20px;height:20px}
+#expInfo{color:#dbe3ee;font-size:12.5px}
+#expInfo.warn{color:#fde68a}
 </style>
 </head><body>
 <div id="map"></div>
@@ -1031,12 +1042,12 @@ button.fl:active{filter:brightness(.92)}
 <div class="sheet" id="shMark"><div class="sh-head"><h2 id="mkTitle"></h2><button class="x" aria-label="Schließen">✕</button></div><div class="sh-body" id="mkBody"></div></div>
 <div class="sheet" id="shShare"><div class="sh-head"><h2>Teilen</h2><button class="x" aria-label="Schließen">✕</button></div>
   <div class="sh-body">
-    <h3 style="margin-top:0">Bild</h3>
-    <div class="seg" id="imgFmt"><button data-f="screen">Bildschirm</button><button data-f="a4p">A4 hoch</button><button data-f="a4l">A4 quer</button></div>
+    <div id="expResult" style="display:none">
+    <h3 style="margin-top:0">Export</h3>
     <img id="prevImg" alt="Vorschau"><div class="muted" id="prevNote" style="margin-top:8px"></div>
-    <label class="chk"><input type="checkbox" id="expCoord"><span>Koordinaten (MGRS) aller Marker unter das Bild</span></label>
-    <div class="row" style="margin-top:10px"><button class="btn" id="bSave" style="flex:1">Bild speichern</button><button class="btn pri" id="bSend" style="flex:1.4">Bild senden</button></div>
-    <h3>Daten für andere Geräte</h3>
+    <div class="row" style="margin-top:10px"><button class="btn" id="bSave" style="flex:1">PDF speichern</button><button class="btn pri" id="bSend" style="flex:1.4">PDF senden</button></div>
+    </div>
+    <h3 style="margin-top:14px">Daten für andere Geräte</h3>
     <div class="row"><button class="btn" id="bExpFile" style="flex:1">Datei senden<br><small>voll bearbeitbar</small></button><button class="btn" id="bExpLayer" style="flex:1">Layer senden<br><small>nur lesen</small></button></div>
     <div class="muted" style="margin-top:6px">Empfänger öffnen die Datei in der Geländetaufe über ☰ Menü → Importieren. Ein Layer wird über die eigene Lage gelegt und kann nicht verändert werden.</div>
   </div></div>
@@ -1052,7 +1063,7 @@ button.fl:active{filter:brightness(.92)}
    Eine Datei, Android + iOS. Grundlage: Einsatzleiterheft (basemap.at, Nominatim, Raster, Farbcodes).
    Farbcodes Rahmen im Uhrzeigersinn: Weiß (unten), Grün (links), Schwarz (oben), Rot (rechts).
 */
-const VERSION='1.16';
+const VERSION='1.17';
 const isLocked=()=>!!DB.locked;
 const BM='https://mapsneu.wien.gv.at/basemap/';
 const LAYERS={
@@ -1206,6 +1217,14 @@ async function tprune(max=20000){ const db=await tdb(); if(!db) return; try{ con
 async function tcount(){ const db=await tdb(); if(!db) return 0; return new Promise(res=>{ try{ const c=db.transaction('t').objectStore('t').count(); c.onsuccess=()=>res(c.result); c.onerror=()=>res(0);}catch(e){res(0)} }); }
 async function tclear(){ const db=await tdb(); if(!db) return; return new Promise(res=>{ try{ const tx=db.transaction('t','readwrite'); tx.objectStore('t').clear(); tx.oncomplete=()=>res(); tx.onerror=()=>res(); }catch(e){res()} }); }
 
+async function parentTile(layer,c){                   /* fehlende Kachel aus gespeicherter gröberer Stufe ausschneiden */
+  for(let d=1;d<=6&&c.z-d>=0;d++){ const z=c.z-d, px=c.x>>d, py=c.y>>d;
+    const r=await tget(L.Util.template(layer._url,{x:px,y:py,z,s:''})); if(!r||!r.b) continue;
+    const bm=await createImageBitmap(r.b); const sub=256/(1<<d), cv=document.createElement('canvas'); cv.width=cv.height=256;
+    const g=cv.getContext('2d'); g.imageSmoothingQuality='high'; g.drawImage(bm,(c.x-(px<<d))*sub,(c.y-(py<<d))*sub,sub,sub,0,0,256,256);
+    return await new Promise(res=>cv.toBlob(res,'image/png')); }
+  return null;
+}
 const CacheLayer=L.TileLayer.extend({
   createTile(coords,done){
     const img=document.createElement('img'); img.alt=''; img.setAttribute('role','presentation');
@@ -1218,11 +1237,13 @@ const CacheLayer=L.TileLayer.extend({
     };
     const fromBlob=b=>{ img._ou=URL.createObjectURL(b); img.onload=()=>{ img.dataset.safe='1'; fin(null); };
       img.onerror=()=>{ try{URL.revokeObjectURL(img._ou);}catch(e){} img._ou=null; direct(); }; img.src=img._ou; };
+    const layer=this;
+    const viaParent=next=>parentTile(layer,coords).then(b=>{ if(!b){ next(); return; } img.dataset.up='1'; fromBlob(b); }).catch(next);
     tget(url).then(r=>{
       if(r&&r.b){ fromBlob(r.b); return; }
-      if(navigator.onLine===false){ direct(); return; }
+      if(navigator.onLine===false){ viaParent(direct); return; }
       fetch(url,{mode:'cors',credentials:'omit'}).then(x=>{ if(!x.ok) throw new Error('HTTP '+x.status); return x.blob(); })
-        .then(b=>{ if(!b.size) throw new Error('leer'); tput(url,b); fromBlob(b); }).catch(direct);
+        .then(b=>{ if(!b.size) throw new Error('leer'); tput(url,b); fromBlob(b); }).catch(()=>viaParent(direct));
     });
     return img;
   }
@@ -1901,6 +1922,7 @@ function stopGridMove(){ if(gridMove){ posL.removeLayer(gridMove); gridMove=null
 
 /* ---------- Werkzeuge ---------- */
 function setTool(t){
+  if(expMode&&t) exitExport();
   tool=(tool===t)? null : t;
   if(tool) stopGridMove();
   if(tool&&(selFrame||selShape)){ selFrame=null; selShape=null; hdlL.clearLayers(); drawFrames(); drawShapes(); }
@@ -2285,12 +2307,12 @@ function drawFrameIcon(ctx,x,y,w,hh){
 }
 function wrapLines(ctx,text,maxW){ const out=[]; let line=''; for(const w of String(text).split(' ')){ const t=line?line+' '+w:w; if(ctx.measureText(t).width>maxW&&line){ out.push(line); line=w; } else line=t; } if(line) out.push(line); return out; }
 
-async function renderImage(full){
+async function renderImage(o){ o=o||{}; const full=true, K=o.k||1;
   const div=map.getContainer(); const cr=div.getBoundingClientRect();
   const tbB=$('tb').getBoundingClientRect(), side=!full&&tbB.height>tbB.width;      // Querformat: Leiste links
   const X0=side?Math.round(tbB.right-cr.left):0, Y0=0, Y1=(full||side)?Math.round(cr.height):Math.round(tbB.top-cr.top);   // sichtbarer Kartenbereich
   const SRC=[...visLayers().map(l=>l.data),P], ALLS=SRC.flatMap(x=>x.shapes||[]), ALLF=SRC.flatMap(x=>x.frames||[]), ALLM=SRC.flatMap(x=>x.marks||[]);
-  const W=Math.round(cr.width)-X0, H=Math.max(200,Y1-Y0), SC=2;
+  const W=Math.round(cr.width)-X0, H=Math.max(200,Y1-Y0), WK=W/K;
   /* Legende vorbereiten */
   const used=['L','A','R'].filter(t=>P.marks.some(m=>m.t===t));
   const expC=!!DB.expCoord;
@@ -2301,12 +2323,14 @@ async function renderImage(full){
   [...new Set(P.marks.filter(m=>m.t==='S').map(m=>m.v))].filter(id=>SYM[id]).forEach(id=>legItems.push({k:'S',sid:id,txt:SYM[id].n}));
   await Promise.all(ALLM.filter(m=>m.t==='S').map(m=>{ const im=symImg(m.v); return im.complete&&im.naturalWidth? 0 : new Promise(r=>{ im.onload=im.onerror=r; setTimeout(r,1500); }); }));
   legItems.length=0;   // keine Legende im Bild (Wunsch HP)
-  legItems.forEach(it=>{ it.lines=wrapLines(meas,it.txt,W-70); });
-  const noteLines=[]; notes.forEach(m=>{ const nt=(m.note||'').trim(); wrapLines(meas,expC?(toMGRS(m.lat,m.lng)+(nt?'  '+nt:'')):nt,W-80).forEach((l,i)=>noteLines.push({m:i?null:m,l})); });
+  legItems.forEach(it=>{ it.lines=wrapLines(meas,it.txt,WK-70); });
+  const noteLines=[]; notes.forEach(m=>{ const nt=(m.note||'').trim(); wrapLines(meas,expC?(toMGRS(m.lat,m.lng)+(nt?'  '+nt:'')):nt,WK-80).forEach((l,i)=>noteLines.push({m:i?null:m,l})); });
   const HEAD=P.addr?62:44, LEG=(legItems.length?legItems.reduce((a,it)=>a+Math.max(38,it.lines.length*18+16),0)+12:0)+(noteLines.length?noteLines.length*24+14:0), FOOT=LEG+26;
-  const cv=document.createElement('canvas'); cv.width=W*SC; cv.height=(HEAD+H+FOOT)*SC;
-  const ctx=cv.getContext('2d'); ctx.scale(SC,SC);
-  ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,HEAD+H+FOOT);
+  const HK=HEAD*K, CH=Math.round(HK+H+FOOT*K);
+  const cv=document.createElement('canvas'); cv.width=W; cv.height=CH;
+  const ctx=cv.getContext('2d'); if(!ctx) throw new Error('Bild zu groß für dieses Gerät');
+  ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,CH);
+  ctx.save(); ctx.scale(K,K); { const W=WK;
   /* Kopf */
   ctx.fillStyle='#1e3a5f'; ctx.fillRect(0,0,W,HEAD);
   ctx.fillStyle='#fff'; ctx.textAlign='left'; ctx.textBaseline='top';
@@ -2316,8 +2340,9 @@ async function renderImage(full){
   ctx.fillText(title,12,12);
   if(P.addr){ ctx.font='14px Arial'; let a=P.addr; while(ctx.measureText(a).width>W-24&&a.length>10) a=a.slice(0,-2); ctx.fillText(a+(a!==P.addr?'…':''),12,38); }
   ctx.textAlign='right'; ctx.font='12px Arial'; ctx.fillText(st,W-12,15);
+  } ctx.restore();
   /* Karte */
-  ctx.save(); ctx.translate(0,HEAD); ctx.beginPath(); ctx.rect(0,0,W,H); ctx.clip(); ctx.translate(-X0,-Y0);
+  ctx.save(); ctx.translate(0,HK); ctx.beginPath(); ctx.rect(0,0,W,H); ctx.clip(); ctx.translate(-X0,-Y0);
   ctx.fillStyle='#e5e7eb'; ctx.fillRect(X0,Y0,W,H);
   let nT=0, bad=0;
   div.querySelectorAll('img.leaflet-tile').forEach(img=>{
@@ -2380,11 +2405,12 @@ async function renderImage(full){
     ctx.fillStyle='#111'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(t,p.x,p.y+dy+9.5); ctx.restore(); });
   ctx.restore();
   /* Nordpfeil + Maßstab */
-  ctx.save(); ctx.translate(W-28,HEAD+30);
+  ctx.save(); ctx.translate(W-28*K,HK+30*K); ctx.scale(K,K);
   ctx.fillStyle='rgba(255,255,255,.9)'; ctx.beginPath(); ctx.arc(0,0,19,0,Math.PI*2); ctx.fill(); ctx.strokeStyle='#111'; ctx.lineWidth=1.2; ctx.stroke();
   ctx.fillStyle='#c81e1e'; ctx.beginPath(); ctx.moveTo(0,-15); ctx.lineTo(7,6); ctx.lineTo(0,2); ctx.lineTo(-7,6); ctx.closePath(); ctx.fill();
   ctx.font='bold 10px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('N',0,12); ctx.restore();
-  { const c=map.getCenter(); const m1=mpp(c.lat); let best=1; for(const s of [1,2,5,10,20,25,50,100,200,250,500,1000,2000,5000]) if(s/m1<=110) best=s; const px=best/m1;
+  const HB=H/K; ctx.save(); ctx.scale(K,K); { const W=WK, H=HB;
+  { const c=map.getCenter(); const m1=mpp(c.lat)*K; let best=1; for(const s of [1,2,5,10,20,25,50,100,200,250,500,1000,2000,5000,10000,20000]) if(s/m1<=110) best=s; const px=best/m1;
     const x=12, y=HEAD+H-14; ctx.fillStyle='rgba(255,255,255,.85)'; ctx.fillRect(x-4,y-16,px+8,22);
     ctx.strokeStyle='#111'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(x,y-5); ctx.lineTo(x,y); ctx.lineTo(x+px,y); ctx.lineTo(x+px,y-5); ctx.stroke();
     ctx.fillStyle='#111'; ctx.font='bold 11px Arial'; ctx.textAlign='left'; ctx.textBaseline='alphabetic'; ctx.fillText(best>=1000?(best/1000)+' km':best+' m',x+3,y-5); }
@@ -2399,40 +2425,186 @@ async function renderImage(full){
   if(noteLines.length){ y+=4; ctx.strokeStyle='#d5dbe3'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(12,y); ctx.lineTo(W-12,y); ctx.stroke(); y+=8;
     noteLines.forEach(n=>{ if(n.m){ ctx.save(); ctx.translate(30,y+11); ctx.scale(.72,.72); drawMarkCanvas(ctx,n.m.t,n.m.v,0,0); ctx.restore(); }
       ctx.fillStyle='#1f2937'; ctx.font='14px Arial'; ctx.textAlign='left'; ctx.fillText(n.l,58,y+11); y+=24; }); }
-  ctx.fillStyle='#6b7280'; ctx.font='10px Arial'; ctx.textAlign='left'; ctx.fillText('Karte: '+srcTxt(P.layer)+' · Geländetaufe Version '+VERSION,12,HEAD+H+FOOT-11);
+  ctx.fillStyle='#6b7280'; ctx.font='10px Arial'; ctx.textAlign='left'; ctx.fillText('Karte: '+srcTxt(P.layer)+' · Zoomstufe '+Math.round(map.getZoom())+(o.note?' · '+o.note:'')+' · Geländetaufe Version '+VERSION,12,HEAD+H+FOOT-11);
+  } ctx.restore();
   return {cv,nT,bad};
 }
 let shareFile=null, shareURL=null;
-const IMG_FMT={a4p:[794,1123],a4l:[1123,794]};
-async function withMapSize(fmt,fn){            /* Karte kurz auf A4-Größe bringen, Bild erzeugen, zurücksetzen */
-  const sz=IMG_FMT[fmt]; if(!sz) return fn(false);
-  const el=$('map'), c=map.getCenter(), z=map.getZoom(), old=el.getAttribute('style')||'';
-  $('busy').style.display='flex';
-  el.style.cssText=`position:fixed;left:0;top:0;right:auto;bottom:auto;width:${sz[0]}px;height:${sz[1]}px;z-index:0`;
-  map.invalidateSize({pan:false}); map.setView(c,z,{animate:false});
-  await new Promise(r=>{ let n=0; const ck=()=>{ const imgs=[...el.querySelectorAll('img.leaflet-tile')]; if((imgs.length&&imgs.every(i=>i.complete))||++n>40) r(); else setTimeout(ck,150); }; setTimeout(ck,300); });
-  try{ return await fn(true); }
-  finally{ el.setAttribute('style',old); map.invalidateSize({pan:false}); map.setView(c,z,{animate:false}); $('busy').style.display='none'; }
+/* ---------- Export: Ausschnitt mit Rahmen, höchste Zoomstufe, PDF/JPG ---------- */
+const EXP_RATIO={free:0,a4p:210/297,a4l:297/210};
+let expMode=false, expL=null, expRes=null;
+function expFmt(){ return EXP_RATIO[DB.imgFmt]!==undefined?DB.imgFmt:'free'; }
+function expOut(){ return DB.expOut==='jpg'?'jpg':'pdf'; }
+function expLimit(){                                   /* größtes sicheres Bild für dieses Gerät */
+  const ios=/iPhone|iPad|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+  const mobile=ios||/Android|Mobi/i.test(navigator.userAgent)||matchMedia('(pointer:coarse)').matches;
+  return {area:ios?15e6:mobile?40e6:100e6, side:ios?8192:16000};
 }
-async function exportImage(){
-  setTool(null); if(selFrame||selShape) deselectFrame(); closeResults();
-  const fmt=IMG_FMT[DB.imgFmt]?DB.imgFmt:'screen';
-  document.querySelectorAll('#imgFmt button').forEach(b=>{ b.classList.toggle('on',b.dataset.f===fmt); b.onclick=()=>{ DB.imgFmt=b.dataset.f; saveNow(); exportImage(); }; });
-  toast('Bild wird erstellt …');
-  await new Promise(r=>setTimeout(r,60));
-  let res; try{ res=await withMapSize(fmt,full=>renderImage(full)); }catch(e){ console.error(e); toast('Bild konnte nicht erstellt werden: '+e.message); return; }
-  const blob=await new Promise(r=>{ try{ res.cv.toBlob(r,'image/png'); }catch(e){ r(null); } });
-  if(!blob){ toast('Bild konnte nicht erstellt werden.'); return; }
-  const d=new Date(); const name=('Gelaendetaufe_'+(P.name||'')+'_'+d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+'_'+pad(d.getHours())+pad(d.getMinutes())).replace(/[^\wäöüÄÖÜß-]+/g,'_').replace(/_+/g,'_')+'.png';
-  shareFile=new File([blob],name,{type:'image/png'});
-  if(shareURL) URL.revokeObjectURL(shareURL); shareURL=URL.createObjectURL(blob);
-  $('prevImg').src=shareURL;
-  const can=!!(navigator.canShare&&navigator.canShare({files:[shareFile]}));
-  $('bSend').style.display=can?'':'none';
-  $('prevNote').textContent=(can?'„Senden“ öffnet das Teilen-Menü: dort Signal oder WhatsApp wählen und die Gruppe antippen.':'Teilen wird von diesem Browser nicht unterstützt: Bild speichern und in Signal oder WhatsApp als Foto anhängen.')
-    +(res.nT?'':' Hinweis: Das Kartenbild fehlt (offline oder noch nicht geladen).');
-  const ec=$('expCoord'); if(ec){ ec.checked=!!DB.expCoord; ec.onchange=()=>{ DB.expCoord=ec.checked; saveNow(); exportImage(); }; }
-  openSheet('shShare');
+function layerMax(){ return (LAYERS[P.layer]||{}).max||19; }
+function expPx(b,z){ const a=map.project([b.n,b.w],z), c=map.project([b.s,b.e],z); return {W:Math.round(c.x-a.x), H:Math.round(c.y-a.y)}; }
+function expPlan(b){
+  const lim=expLimit(), zMax=layerMax(); let z=zMax, s;
+  for(;z>=8;z--){ s=expPx(b,z); const hk=Math.max(1,s.W/1000)*90;   /* Platz für Kopf/Fuß */
+    if(s.W*(s.H+hk)<=lim.area&&Math.max(s.W,s.H+hk)<=lim.side) break; }
+  if(z<8){ z=8; s=expPx(b,z); }
+  const bpp=P.layer==='ortho'?.35:.25;
+  return {z,W:s.W,H:s.H,reduced:z<zMax,zMax,mb:Math.max(.1,s.W*s.H*bpp/1e6)};
+}
+function expDefault(){
+  const cr=map.getContainer().getBoundingClientRect(), tb=$('tb').getBoundingClientRect();
+  const side=tb.height>tb.width, x0=side?tb.right-cr.left:0, y1=side?cr.height:tb.top-cr.top;
+  const hn=$('hint').getBoundingClientRect(), top=80, bot=(hn.height&&!side?hn.top-cr.top:y1)-24;
+  const cx=(x0+cr.width)/2, cy=(top+bot)/2; let w=(cr.width-x0)*.8, hh=Math.max(60,bot-top);
+  const r=EXP_RATIO[expFmt()]; if(r){ if(w/hh>r) w=hh*r; else hh=w/r; }
+  return boxFromPx(cx-w/2,cy-hh/2,cx+w/2,cy+hh/2);
+}
+function boxFromPx(x1,y1,x2,y2){ const a=map.containerPointToLatLng([Math.min(x1,x2),Math.min(y1,y2)]), c=map.containerPointToLatLng([Math.max(x1,x2),Math.max(y1,y2)]); return {n:a.lat,w:a.lng,s:c.lat,e:c.lng}; }
+function expValid(b){ if(!b||!(b.n>b.s)||!(b.e>b.w)) return false; const v=map.getBounds(); return v.intersects(L.latLngBounds([b.s,b.w],[b.n,b.e])); }
+function fitRatio(b){                                  /* Rahmen auf A4-Seitenverhältnis bringen (Mitte bleibt) */
+  const r=EXP_RATIO[expFmt()]; if(!r) return b;
+  const z=map.getZoom(), a=map.project([b.n,b.w],z), c=map.project([b.s,b.e],z);
+  let w=c.x-a.x, hh=c.y-a.y; const area=w*hh; w=Math.sqrt(area*r); hh=w/r;
+  const m={x:(a.x+c.x)/2,y:(a.y+c.y)/2}; const p=map.unproject([m.x-w/2,m.y-hh/2],z), q=map.unproject([m.x+w/2,m.y+hh/2],z);
+  return {n:p.lat,w:p.lng,s:q.lat,e:q.lng};
+}
+function enterExport(){
+  if(tool) setTool(null); if(selFrame||selShape) deselectFrame(); closeSheets(); closeResults(); map.closePopup();
+  expMode=true; if(!P.exp) P.exp={n:1,s:0,w:0,e:1}; expHint();
+  if(!expValid(P.exp)){ P.exp=expDefault(); save(); }
+  drawExpBox(); expInfo();
+}
+function exitExport(){ expMode=false; if(expL){ expL.remove(); expL=null; } setHint(null); }
+function drawExpBox(){
+  if(expL) expL.remove(); expL=L.layerGroup().addTo(map);
+  const b=P.exp, world=[[-85,-360],[-85,360],[85,360],[85,-360]], box=[[b.n,b.w],[b.n,b.e],[b.s,b.e],[b.s,b.w]];
+  const shade=L.polygon([world,box],{stroke:false,fillColor:'#000',fillOpacity:.32,interactive:false}).addTo(expL);
+  const o1=L.rectangle([[b.s,b.w],[b.n,b.e]],{color:'#111',weight:5,opacity:.7,fill:false,interactive:false}).addTo(expL);
+  const o2=L.rectangle([[b.s,b.w],[b.n,b.e]],{color:'#fff',weight:2.5,dashArray:'10 7',fill:false,interactive:false}).addTo(expL);
+  const mk=(cls,txt,size,ll)=>L.marker(ll,{pane:'handles',draggable:true,keyboard:false,autoPan:false,
+    icon:L.divIcon({className:'',html:`<div class="hdl ${cls}"><i>${txt||''}</i></div>`,iconSize:[size,size],iconAnchor:[size/2,size/2]})}).addTo(expL);
+  const cs=[[b.n,b.w],[b.n,b.e],[b.s,b.e],[b.s,b.w]];
+  const corners=cs.map((ll,i)=>{ const m=mk('cn','',44,ll); m._ci=i; return m; });
+  const mv=mk('mv','✥',48,[(b.n+b.s)/2,(b.w+b.e)/2]);
+  const upd=()=>{ const B=P.exp, bx=[[B.n,B.w],[B.n,B.e],[B.s,B.e],[B.s,B.w]]; shade.setLatLngs([world,bx]); o1.setBounds([[B.s,B.w],[B.n,B.e]]); o2.setBounds([[B.s,B.w],[B.n,B.e]]);
+    corners.forEach((m,i)=>{ if(!m._drag) m.setLatLng(bx[i]); }); if(!mv._drag) mv.setLatLng([(B.n+B.s)/2,(B.w+B.e)/2]); expInfo(); };
+  corners.forEach(m=>{
+    let fix=null;
+    m.on('dragstart',()=>{ m._drag=true; const B=P.exp, bx=[[B.n,B.w],[B.n,B.e],[B.s,B.e],[B.s,B.w]]; fix=map.latLngToContainerPoint(bx[(m._ci+2)%4]); });
+    m.on('drag',()=>{ const p=map.latLngToContainerPoint(m.getLatLng()); let dx=p.x-fix.x, dy=p.y-fix.y; const r=EXP_RATIO[expFmt()];
+      let w=Math.max(30,Math.abs(dx)), hh=Math.max(30,Math.abs(dy)); if(r){ if(w/hh>r) hh=w/r; else w=hh*r; }
+      const sx=dx<0?-1:1, sy=dy<0?-1:1; P.exp=boxFromPx(fix.x,fix.y,fix.x+sx*w,fix.y+sy*hh); upd(); });
+    m.on('dragend',()=>{ m._drag=false; save(); upd(); });
+  });
+  let st=null;
+  mv.on('dragstart',()=>{ mv._drag=true; st={ll:mv.getLatLng(),b:Object.assign({},P.exp)}; });
+  mv.on('drag',()=>{ const z=map.getZoom(), a=map.project(st.ll,z), c=map.project(mv.getLatLng(),z), dx=c.x-a.x, dy=c.y-a.y;
+    const p=map.project([st.b.n,st.b.w],z), q=map.project([st.b.s,st.b.e],z), P1=map.unproject([p.x+dx,p.y+dy],z), Q1=map.unproject([q.x+dx,q.y+dy],z);
+    P.exp={n:P1.lat,w:P1.lng,s:Q1.lat,e:Q1.lng}; upd(); });
+  mv.on('dragend',()=>{ mv._drag=false; save(); upd(); });
+}
+function expInfo(){ const el=$('expInfo'); if(!el||!P.exp) return; const pl=expPlan(P.exp);
+  el.textContent=`Zoomstufe ${pl.z}${pl.reduced?' (max. '+pl.zMax+')':''} · ${pl.W.toLocaleString('de-AT')} × ${pl.H.toLocaleString('de-AT')} px · ca. ${pl.mb<1?pl.mb.toFixed(1).replace('.',','):Math.round(pl.mb)} MB`;
+  el.classList.toggle('warn',pl.reduced); }
+function expHint(){
+  const el=$('hint'); el.innerHTML=''; el.classList.add('panel'); delete el.dataset.picker;
+  const seg=(opts,cur,fn)=>{ const s=h('div',{class:'seg sm'}); opts.forEach(([k,t])=>s.append(h('button',{class:k===cur?'on':'',onclick:e=>{ e.stopPropagation(); fn(k); }},t))); return s; };
+  el.append(
+    h('div',{class:'prow'},h('b',{style:'flex:1'},'Export-Ausschnitt'),h('button',{'aria-label':'Abbrechen',onclick:e=>{ e.stopPropagation(); exitExport(); }},'✕')),
+    h('div',{class:'muted',id:'expInfo'}),
+    h('div',{class:'prow'},seg([['free','Frei'],['a4p','A4 hoch'],['a4l','A4 quer']],expFmt(),k=>{ DB.imgFmt=k; saveNow(); P.exp=fitRatio(P.exp); save(); drawExpBox(); expHint(); })),
+    h('div',{class:'prow'},seg([['pdf','PDF'],['jpg','JPG']],expOut(),k=>{ DB.expOut=k; saveNow(); expHint(); }),
+      h('label',{class:'echk'},(()=>{ const c=h('input',{type:'checkbox'}); c.checked=!!DB.expCoord; c.onchange=()=>{ DB.expCoord=c.checked; saveNow(); }; return c; })(),h('span',null,'MGRS-Liste'))),
+    h('div',{class:'prow'},h('button',{onclick:e=>{ e.stopPropagation(); openSheet('shShare'); showShareResult(false); }},'Daten senden …'),
+      h('button',{class:'pri',style:'flex:1',onclick:e=>{ e.stopPropagation(); buildExport(); }},expOut()==='pdf'?'PDF erstellen':'JPG erstellen')));
+  el.style.display='flex'; expInfo();
+}
+function busyText(t){ const el=$('busy'); el.firstElementChild.textContent=t; }
+function tileProgress(lays){ let n=0,d=0; lays.forEach(l=>{ for(const k in l._tiles){ n++; if(l._tiles[k].loaded) d++; } }); return {n,d}; }
+async function buildExport(){
+  const b=P.exp; if(!b) return; let pl=expPlan(b);
+  if(pl.W<50||pl.H<50){ toast('Ausschnitt zu klein'); return; }
+  const out=expOut(), el=$('map'), c0=map.getCenter(), z0=map.getZoom(), old=el.getAttribute('style')||'';
+  $('busy').style.display='flex'; busyText('Kacheln werden geladen …');
+  if(expL){ expL.remove(); expL=null; } setHint(null);
+  let res=null, err=null, up=0;
+  const center=()=>{ const a=map.project([b.n,b.w],pl.z), c=map.project([b.s,b.e],pl.z); return map.unproject([(a.x+c.x)/2,(a.y+c.y)/2],pl.z); };
+  try{
+    for(let tryN=0;tryN<3;tryN++){
+      try{
+        el.style.cssText=`position:fixed;left:0;top:0;right:auto;bottom:auto;width:${pl.W}px;height:${pl.H}px;z-index:0`;
+        map.invalidateSize({pan:false}); map.setView(center(),pl.z,{animate:false});
+        const lays=[baseL,ovL].filter(Boolean), t0=Date.now();
+        await new Promise(r=>{ const ck=()=>{ const p=tileProgress(lays); busyText(`Kacheln werden geladen … ${p.d} / ${p.n}`);
+          if((p.n&&p.d>=p.n)||Date.now()-t0>60000+p.n*60) return r(); setTimeout(ck,250); }; setTimeout(ck,300); });
+        await new Promise(r=>setTimeout(r,150));
+        up=[...el.querySelectorAll('img.leaflet-tile')].filter(i=>i.dataset.up==='1').length;
+        busyText(out==='pdf'?'PDF wird erstellt …':'Bild wird erstellt …'); await new Promise(r=>setTimeout(r,30));
+        const k=Math.max(1,Math.min(pl.W/1000,pl.H/250));
+        res=await renderImage({k,note:up?'teils gröbere Kacheln (offline)':''});
+        res.blob=await encodeExport(res.cv,out);
+        if(!res.blob) throw new Error('Bild zu groß für dieses Gerät');
+        break;
+      }catch(e){ err=e; res=null; if(pl.z<=8) break; const z=pl.z-1; const s=expPx(b,z); pl=Object.assign({},pl,{z,W:s.W,H:s.H,reduced:true}); busyText('Zu groß – eine Zoomstufe gröber …'); }
+    }
+  } finally {
+    el.setAttribute('style',old); map.invalidateSize({pan:false}); map.setView(c0,z0,{animate:false}); $('busy').style.display='none'; busyText('Bild wird erstellt …');
+  }
+  if(!res){ console.error(err); toast('Export nicht möglich: '+(err&&err.message||'Fehler')); enterExport(); return; }
+  exitExport();
+  const d=new Date(); const base=('Gelaendetaufe_'+(P.name||'')+'_'+d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+'_'+pad(d.getHours())+pad(d.getMinutes())).replace(/[^\wäöüÄÖÜß-]+/g,'_').replace(/_+/g,'_');
+  shareFile=new File([res.blob],base+(out==='pdf'?'.pdf':'.jpg'),{type:out==='pdf'?'application/pdf':'image/jpeg'});
+  if(shareURL) URL.revokeObjectURL(shareURL); shareURL=URL.createObjectURL(res.blob);
+  const pv=document.createElement('canvas'), s=Math.min(1,900/Math.max(res.cv.width,res.cv.height)); pv.width=Math.round(res.cv.width*s); pv.height=Math.round(res.cv.height*s);
+  pv.getContext('2d').drawImage(res.cv,0,0,pv.width,pv.height); $('prevImg').src=pv.toDataURL('image/jpeg',.85);
+  res.cv.width=res.cv.height=1;
+  expRes={pl,up,nT:res.nT,size:res.blob.size,out};
+  openSheet('shShare'); showShareResult(true);
+}
+function showShareResult(on){
+  $('expResult').style.display=on?'':'none'; if(!on||!expRes) return;
+  const r=expRes, can=!!(navigator.canShare&&navigator.canShare({files:[shareFile]})), T=r.out==='pdf'?'PDF':'Bild';
+  $('bSend').style.display=can?'':'none'; $('bSend').textContent=T+' senden'; $('bSave').textContent=T+' speichern';
+  const mb=r.size<1e5?Math.max(1,Math.round(r.size/1e3))+' KB':(r.size/1e6).toFixed(1).replace('.',',')+' MB';
+  $('prevNote').textContent=`${r.pl.W.toLocaleString('de-AT')} × ${r.pl.H.toLocaleString('de-AT')} px · Zoomstufe ${r.pl.z} · ${mb}. `
+    +(r.pl.reduced?`Für dieses Gerät war der Ausschnitt zu groß: eine gröbere Zoomstufe (statt ${r.pl.zMax}) wurde verwendet. `:'')
+    +(r.up?`${r.up} Kacheln fehlten und wurden aus einer gröberen Stufe hochgerechnet. `:'')
+    +(r.nT?'':'Hinweis: Das Kartenbild fehlt (offline oder nicht geladen). ')
+    +(can?(r.out==='pdf'?'„Senden“ öffnet das Teilen-Menü: Signal oder WhatsApp wählen – ein PDF kommt in voller Auflösung an.':'Tipp: In WhatsApp/Signal als „Dokument“ senden, sonst wird das Bild verkleinert.'):'Teilen wird von diesem Browser nicht unterstützt: speichern und in Signal oder WhatsApp als Dokument anhängen.');
+}
+async function encodeExport(cv,out){
+  const tb=(type,q)=>new Promise(r=>{ try{ cv.toBlob(r,type,q); }catch(e){ r(null); } });
+  if(out==='jpg') return tb('image/jpeg',.9);
+  let img;
+  if(P.layer!=='ortho'&&typeof CompressionStream!=='undefined'){ try{ img={filter:'FlateDecode',data:await flateRGB(cv)}; }catch(e){ console.warn(e); img=null; } }
+  if(!img){ const j=await tb('image/jpeg',P.layer==='ortho'?.9:.95); if(!j) return null; img={filter:'DCTDecode',data:j}; }
+  return makePdf(img,cv.width,cv.height,expFmt());
+}
+async function flateRGB(cv){                           /* Pixel streifenweise zu RGB + zlib (PDF FlateDecode) */
+  const ctx=cv.getContext('2d'), W=cv.width, H=cv.height, cs=new CompressionStream('deflate'), wr=cs.writable.getWriter();
+  const outP=new Response(cs.readable).blob();
+  for(let y=0;y<H;y+=256){ const hh=Math.min(256,H-y), d=ctx.getImageData(0,y,W,hh).data, o=new Uint8Array(W*hh*3);
+    for(let i=0,j=0;i<d.length;i+=4,j+=3){ o[j]=d[i]; o[j+1]=d[i+1]; o[j+2]=d[i+2]; }
+    await wr.write(o); }
+  await wr.close(); return outP;
+}
+function makePdf(img,W,H,fmt){                         /* minimales PDF mit einem Bild auf einer Seite */
+  let pw,ph,x,y,w,hh;
+  if(fmt==='a4p'||fmt==='a4l'){ pw=fmt==='a4p'?595.28:841.89; ph=fmt==='a4p'?841.89:595.28; const m=14, s=Math.min((pw-2*m)/W,(ph-2*m)/H); w=W*s; hh=H*s; x=(pw-w)/2; y=(ph-hh)/2; }
+  else { const s=Math.min(.75,14000/Math.max(W,H)); pw=w=W*s; ph=hh=H*s; x=y=0; }
+  const f=n=>(Math.round(n*100)/100).toString();
+  const enc=new TextEncoder(), parts=[], offs=[]; let len=0;
+  const add=p=>{ const b=typeof p==='string'?enc.encode(p):p; parts.push(b); len+=b.size!=null?b.size:b.length; };
+  const obj=(n,body)=>{ offs[n]=len; add(n+' 0 obj\n'); body(); add('\nendobj\n'); };
+  const content=`q ${f(w)} 0 0 ${f(hh)} ${f(x)} ${f(y)} cm /Im0 Do Q`;
+  add('%PDF-1.4\n'); add(new Uint8Array([37,226,227,207,211,10]));
+  obj(1,()=>add('<< /Type /Catalog /Pages 2 0 R >>'));
+  obj(2,()=>add('<< /Type /Pages /Kids [3 0 R] /Count 1 >>'));
+  obj(3,()=>add(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${f(pw)} ${f(ph)}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`));
+  obj(4,()=>{ add(`<< /Type /XObject /Subtype /Image /Width ${W} /Height ${H} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /${img.filter} /Length ${img.data.size} >>\nstream\n`); add(img.data); add('\nendstream'); });
+  obj(5,()=>add(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`));
+  const xref=len; let t='xref\n0 6\n0000000000 65535 f \n'; for(let i=1;i<=5;i++) t+=String(offs[i]).padStart(10,'0')+' 00000 n \n';
+  add(t+`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
+  return new Blob(parts,{type:'application/pdf'});
 }
 async function sendImage(){
   if(!shareFile) return;
@@ -2562,7 +2734,7 @@ function init(){
   $('bDraw').onclick=openDrawPicker;
   $('bList').onclick=()=>{ closeResults(); openList(); };
   $('bUndo').onclick=undo;
-  $('bShare').onclick=()=>{ if(tool) setTool(null); if(selFrame||selShape) deselectFrame(); exportImage(); };
+  $('bShare').onclick=()=>{ if(expMode) exitExport(); else enterExport(); };
   $('bSend').onclick=sendImage; $('bSave').onclick=downloadImage;
   $('bExpFile').onclick=()=>shareData('file'); $('bExpLayer').onclick=()=>shareData('layer');
   $('backdrop').onclick=()=>closeSheets();
