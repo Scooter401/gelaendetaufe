@@ -1063,18 +1063,32 @@ button.fl:active{filter:brightness(.92)}
    Eine Datei, Android + iOS. Grundlage: Einsatzleiterheft (basemap.at, Nominatim, Raster, Farbcodes).
    Farbcodes Rahmen im Uhrzeigersinn: Weiß (unten), Grün (links), Schwarz (oben), Rot (rechts).
 */
-const VERSION='1.17';
+const VERSION='1.18';
 const isLocked=()=>!!DB.locked;
 const BM='https://mapsneu.wien.gv.at/basemap/';
 const LAYERS={
-  ortho:{n:'Orthofoto', url:BM+'bmaporthofoto30cm/normal/google3857/{z}/{y}/{x}.jpeg', ov:true},
-  karte:{n:'Karte',     url:BM+'geolandbasemap/normal/google3857/{z}/{y}/{x}.png'},
-  grau: {n:'Grau',      url:BM+'bmapgrau/normal/google3857/{z}/{y}/{x}.png'},
-  oek50:{n:'ÖK50',      url:'https://maps.bev.gv.at/tiles/karte/{z}/{x}/{y}.png', max:16, src:'bev'}
+  ortho:{n:'Orthofoto', lb:'Ortho', url:BM+'bmaporthofoto30cm/normal/google3857/{z}/{y}/{x}.jpeg', ov:BM+'bmapoverlay/normal/google3857/{z}/{y}/{x}.png', jpg:true},
+  karte:{n:'Karte',     lb:'Karte', url:BM+'geolandbasemap/normal/google3857/{z}/{y}/{x}.png'},
+  grau: {n:'Grau',      lb:'Grau',  url:BM+'bmapgrau/normal/google3857/{z}/{y}/{x}.png'},
+  oek50:{n:'ÖK50',      lb:'ÖK50',  url:'https://maps.bev.gv.at/tiles/karte/{z}/{x}/{y}.png', max:16, src:'bev'},
+  /* Deutschland (v1.18) */
+  de_topo:{n:'Topo',      lb:'DE Topo', url:'https://sgx.geodatenzentrum.de/wmts_topplus_open/tile/1.0.0/web/default/WEBMERCATOR/{z}/{y}/{x}.png', max:18, src:'bkg_topo'},
+  de_str: {n:'Straße',    lb:'DE Str.', url:'https://sgx.geodatenzentrum.de/wmts_basemapde/tile/1.0.0/de_basemapde_web_raster_farbe/default/GLOBAL_WEBMERCATOR/{z}/{y}/{x}.png', max:18, src:'bkg_bm'},
+  de_sat: {n:'Satellit',  lb:'DE Sat', url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', max:19, src:'esri', jpg:true,
+           ov:'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}'}
 };
-const LAYER_ORDER=['ortho','karte','grau','oek50'];
-function srcTxt(k){ return (LAYERS[k]||{}).src==='bev'?'Austrian Map © BEV (CC BY 4.0)':'basemap.at'; }
-const OVERLAY=BM+'bmapoverlay/normal/google3857/{z}/{y}/{x}.png';
+const LAYER_GROUPS=[{n:'Österreich',k:['ortho','karte','grau','oek50']},{n:'Deutschland',k:['de_sat','de_str','de_topo']}];
+const LAYER_ORDER=LAYER_GROUPS.flatMap(g=>g.k);
+const SRC_INFO={
+  bev:     {t:'Austrian Map © BEV (CC BY 4.0)', a:'<a href="https://maps.bev.gv.at" target="_blank" rel="noopener">Austrian Map © BEV</a> (CC BY 4.0)'},
+  bkg_topo:{t:'TopPlusOpen © BKG (dl-de/by-2-0)', a:'<a href="https://gdz.bkg.bund.de" target="_blank" rel="noopener">TopPlusOpen © BKG</a> (dl-de/by-2-0)'},
+  bkg_bm:  {t:'basemap.de © BKG (CC BY 4.0)', a:'<a href="https://basemap.de" target="_blank" rel="noopener">basemap.de © BKG</a> (CC BY 4.0)'},
+  esri:    {t:'Esri World Imagery (Esri, Maxar, Earthstar Geographics)', a:'<a href="https://www.esri.com" target="_blank" rel="noopener">Esri</a>, Maxar, Earthstar Geographics'},
+  bm:      {t:'basemap.at', a:'<a href="https://basemap.at" target="_blank" rel="noopener">basemap.at</a>'}
+};
+function srcOf(k){ return SRC_INFO[(LAYERS[k]||{}).src]||SRC_INFO.bm; }
+function srcTxt(k){ return srcOf(k).t; }
+function isJpgLayer(k){ return !!(LAYERS[k]||{}).jpg; }
 const RED='#c81e1e', GREEN='#3f9d3f', BLACK='#111111', WHITE='#ffffff', YEL='#facc15';
 const SEQ_L='JKLMNPQRSTUVWXYZ';             // ab J, ohne O, endet bei Z
 const SEQ_OLD='LMNPQRSTUVWXYZ';
@@ -1285,11 +1299,11 @@ function setBase(){
   if(baseL) map.removeLayer(baseL); if(ovL){ map.removeLayer(ovL); ovL=null; }
   const Ld=LAYERS[P.layer]||LAYERS.ortho;
   const opt={maxNativeZoom:Ld.max||19,maxZoom:21,keepBuffer:3};
-  const att=Ld.src==='bev'?'Karte: <a href="https://maps.bev.gv.at" target="_blank" rel="noopener">Austrian Map © BEV</a> (CC BY 4.0)':'Karte: <a href="https://basemap.at" target="_blank" rel="noopener">basemap.at</a>';
+  const att='Karte: '+srcOf(P.layer).a;
   baseL=new CacheLayer(Ld.url,Object.assign({attribution:att},opt)).addTo(map);
   baseL.on('tileunload',unloadTile);
-  if(Ld.ov){ ovL=new CacheLayer(OVERLAY,Object.assign({pane:'labels'},opt)).addTo(map); ovL.on('tileunload',unloadTile); }
-  const b=$('bLayer'); if(b) b.querySelector('.lb').textContent={ortho:'Ortho',karte:'Karte',grau:'Grau',oek50:'ÖK50'}[P.layer]||Ld.n;
+  if(Ld.ov){ ovL=new CacheLayer(Ld.ov,Object.assign({pane:'labels'},opt)).addTo(map); ovL.on('tileunload',unloadTile); }
+  const b=$('bLayer'); if(b) b.querySelector('.lb').textContent=Ld.lb||Ld.n;
 }
 function unloadTile(e){ if(e.tile&&e.tile._ou){ try{URL.revokeObjectURL(e.tile._ou);}catch(x){} e.tile._ou=null; } }
 function drawAll(){ setBase(); drawGrid(); drawLayers(); drawShapes(); drawFrames(); drawMarks(); hdlL.clearLayers(); if(selFrame) drawHandles(); if(selShape) drawShapeHandles(); updTools(); }
@@ -2050,8 +2064,9 @@ function renderMenu(){
     h('button',{class:'btn pri full',onclick:()=>{ const n=newProject(); DB.list.push(n); switchProject(n.id); closeSheets(); toast('Neue Geländetaufe: Zählung beginnt wieder bei J, 1 und I'); }},'+ Neue Geländetaufe'),
     h('div',{style:'height:8px'}), pl);
   /* Karte */
-  const seg=h('div',{class:'seg'}); LAYER_ORDER.forEach(k=>seg.append(h('button',{class:P.layer===k?'on':'',onclick:()=>{ P.layer=k; save(); setBase(); renderMenu(); }},LAYERS[k].n)));
-  b.append(h('h3',null,'Kartengrundlage'), seg);
+  b.append(h('h3',null,'Kartengrundlage'));
+  LAYER_GROUPS.forEach(g=>{ const seg=h('div',{class:'seg'}); g.k.forEach(k=>seg.append(h('button',{class:P.layer===k?'on':'',onclick:()=>{ P.layer=k; save(); setBase(); renderMenu(); }},LAYERS[k].n)));
+    b.append(h('div',{class:'muted',style:'margin:2px 0 4px'},g.n), seg); });
   /* Mehr (eingeklappt) */
   const cinfo=h('div',{class:'muted'},'…'); tcount().then(n=>{ cinfo.textContent=n+' Kartenkacheln gespeichert. Bereits angesehene Gebiete sind auch ohne Netz sichtbar.'; });
   b.append(
@@ -2064,7 +2079,7 @@ function renderMenu(){
     h('details',null,h('summary',null,'Zwischenspeicher & Info'),
       cinfo,
       h('div',{class:'row'},h('button',{class:'btn sm',onclick:async()=>{ if(!confirm('Gespeicherte Kartenkacheln löschen? Marker und Geländetaufen bleiben erhalten.')) return; await tclear(); renderMenu(); toast('Zwischenspeicher geleert'); }},'Zwischenspeicher leeren')),
-      h('div',{class:'muted'},'Geländetaufe '+VERSION+' · Karten basemap.at (CC BY 4.0), ÖK50 Austrian Map © BEV (CC BY 4.0) · Adresssuche OpenStreetMap/Nominatim (© OpenStreetMap-Mitwirkende). Alle Eingaben bleiben nur auf diesem Gerät.')));
+      h('div',{class:'muted'},'Geländetaufe '+VERSION+' · Karten basemap.at (CC BY 4.0), ÖK50 Austrian Map © BEV (CC BY 4.0), Deutschland: TopPlusOpen © BKG (dl-de/by-2-0), basemap.de © BKG (CC BY 4.0), Satellit Esri World Imagery (Esri, Maxar, Earthstar Geographics) · Adresssuche OpenStreetMap/Nominatim (© OpenStreetMap-Mitwirkende). Alle Eingaben bleiben nur auf diesem Gerät.')));
 }
 function switchProject(id){
   saveNow(); const p=DB.list.find(x=>x.id===id); if(!p) return;
@@ -2447,7 +2462,7 @@ function expPlan(b){
   for(;z>=8;z--){ s=expPx(b,z); const hk=Math.max(1,s.W/1000)*90;   /* Platz für Kopf/Fuß */
     if(s.W*(s.H+hk)<=lim.area&&Math.max(s.W,s.H+hk)<=lim.side) break; }
   if(z<8){ z=8; s=expPx(b,z); }
-  const bpp=P.layer==='ortho'?.35:.25;
+  const bpp=isJpgLayer(P.layer)?.35:.25;
   return {z,W:s.W,H:s.H,reduced:z<zMax,zMax,mb:Math.max(.1,s.W*s.H*bpp/1e6)};
 }
 function expDefault(){
@@ -2575,8 +2590,8 @@ async function encodeExport(cv,out){
   const tb=(type,q)=>new Promise(r=>{ try{ cv.toBlob(r,type,q); }catch(e){ r(null); } });
   if(out==='jpg') return tb('image/jpeg',.9);
   let img;
-  if(P.layer!=='ortho'&&typeof CompressionStream!=='undefined'){ try{ img={filter:'FlateDecode',data:await flateRGB(cv)}; }catch(e){ console.warn(e); img=null; } }
-  if(!img){ const j=await tb('image/jpeg',P.layer==='ortho'?.9:.95); if(!j) return null; img={filter:'DCTDecode',data:j}; }
+  if(!isJpgLayer(P.layer)&&typeof CompressionStream!=='undefined'){ try{ img={filter:'FlateDecode',data:await flateRGB(cv)}; }catch(e){ console.warn(e); img=null; } }
+  if(!img){ const j=await tb('image/jpeg',isJpgLayer(P.layer)?.9:.95); if(!j) return null; img={filter:'DCTDecode',data:j}; }
   return makePdf(img,cv.width,cv.height,expFmt());
 }
 async function flateRGB(cv){                           /* Pixel streifenweise zu RGB + zlib (PDF FlateDecode) */
@@ -2685,7 +2700,7 @@ async function checkIncoming(){
 
 /* ---------- Gebiet offline speichern ---------- */
 function tileUrls(b,z0,z1){
-  const urls=[]; const lays=[LAYERS[P.layer].url]; if(LAYERS[P.layer].ov) lays.push(OVERLAY);
+  const urls=[]; const lays=[LAYERS[P.layer].url]; if(LAYERS[P.layer].ov) lays.push(LAYERS[P.layer].ov);
   for(let z=z0;z<=z1;z++){
     const a=map.project(b.getNorthWest(),z).divideBy(256).floor(), c=map.project(b.getSouthEast(),z).divideBy(256).floor();
     for(let x=a.x;x<=c.x;x++) for(let y=a.y;y<=c.y;y++) lays.forEach(u=>urls.push(L.Util.template(u,{x,y,z,s:''})));
@@ -2700,7 +2715,7 @@ async function saveOffline(){
   let z1=Math.min(LAYERS[P.layer].max||19,z+3), urls=tileUrls(b,Math.max(10,z-3),z1);
   while(urls.length>4000&&z1>z){ z1--; urls=tileUrls(b,Math.max(10,z-3),z1); }
   if(urls.length>4000){ toast('Ausschnitt zu groß – bitte weiter hineinzoomen.'); return; }
-  const mb=Math.round(urls.length*(P.layer==='ortho'?.03:.015));
+  const mb=Math.round(urls.length*(isJpgLayer(P.layer)?.03:.015));
   if(!confirm(`Den sichtbaren Ausschnitt (${LAYERS[P.layer].n}, Zoom ${Math.max(10,z-3)}–${z1}) offline speichern?\n\n${urls.length} Kacheln, ca. ${mb} MB.`)) return;
   closeSheets();
   const run=offlineRun={stop:false}; let done=0, fail=0, i=0;
@@ -2729,7 +2744,7 @@ function init(){
   $('bSearch').onclick=doSearch;
   $('bLoc').onclick=locate;
   $('bLock').onclick=toggleLock;
-  $('bLayer').onclick=()=>{ const i=LAYER_ORDER.indexOf(P.layer); P.layer=LAYER_ORDER[(i+1)%LAYER_ORDER.length]; save(); setBase(); toast('Karte: '+LAYERS[P.layer].n); };
+  $('bLayer').onclick=()=>{ const g=(LAYER_GROUPS.find(g=>g.k.includes(P.layer))||LAYER_GROUPS[0]).k, i=g.indexOf(P.layer); P.layer=g[(i+1)%g.length]; save(); setBase(); toast('Karte: '+LAYERS[P.layer].n); };
   $('bMarker').onclick=openMarkerPicker;
   $('bDraw').onclick=openDrawPicker;
   $('bList').onclick=()=>{ closeResults(); openList(); };
